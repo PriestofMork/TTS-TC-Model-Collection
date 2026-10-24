@@ -3,3 +3,12 @@
 .venv/
 # TTS saves are large and machine-specific; export.py reads them from the TTS Saves folder
 *.bak
+
+# Personal / stray files that don't belong in the public repo
+*.bat
+*.cmd
+*.ps1
+*.exe
+*.zip
+*.tmp
+~$*
