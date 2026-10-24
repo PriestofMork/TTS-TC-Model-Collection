@@ -264,11 +264,48 @@ local function startFollowing()
     Wait.frames(followStep, 1)
 end
 
-local function linkDie(die)
+-- Script put on linked dice. Number keys over a die go to the die's own script first, and
+-- returning true there stops TTS's own handling (catching them in the model's
+-- onObjectNumberTyped did not: TTS still lifted and dropped the die). The die's memo holds its
+-- model's GUID; without one (taken off again) the die behaves normally.
+local DIE_SCRIPT = [[
+-- TC Miniatures die marker: 1-6 turn this die to that face, 0 hands it back to its model.
+function onNumberTyped(player_color, number)
+    local model = self.memo ~= "" and getObjectFromGUID(self.memo) or nil
+    if model == nil then return end
+    if number == 0 then
+        model.call("releaseDie", {guid = self.getGUID()})
+        return true
+    end
+    -- Not setValue: that lifts the die and lets physics drop it.
+    for _, rv in ipairs(self.getRotationValues() or {}) do
+        if tostring(rv.value) == tostring(number) then self.setRotation(rv.rotation) end
+    end
+    return true
+end
+]]
+
+local function addDie(die)
     if not findDie(die.getGUID()) then state.dice[#state.dice + 1] = die.getGUID() end
     die.setLock(true)
     placeDice()
     saveState()
+end
+
+-- Dice without a script get DIE_SCRIPT; a new script only runs after a reload, which replaces
+-- the object. Dice that already have another script are linked without it (number keys then
+-- behave like TTS's default).
+local function linkDie(die)
+    die.memo = self.getGUID()
+    if die.getLuaScript() ~= "" then   -- ours already, or someone else's
+        addDie(die)
+        return
+    end
+    die.setLuaScript(DIE_SCRIPT)
+    local fresh = die.reload()
+    Wait.condition(function()
+        if fresh ~= nil and self ~= nil then addDie(fresh) end
+    end, function() return fresh == nil or not fresh.spawning end, 5)
 end
 
 -- The die becomes a normal die again, beside the model on the table.
@@ -276,6 +313,7 @@ local function unlinkDie(die, putDown)
     local i = findDie(die.getGUID())
     if not i then return end
     table.remove(state.dice, i)
+    die.memo = ""   -- its script then leaves number keys to TTS again
     die.setLock(false)
     if putDown then
         local offset = Vector(-1.5, 0, 0):rotateOver("y", self.getRotation().y)
@@ -286,15 +324,10 @@ local function unlinkDie(die, putDown)
     saveState()
 end
 
--- Turns a die to show `number` without TTS's set-value move (which lifts the die and lets it
--- fall): the die's rotation table says which rotation shows which value.
-local function setFace(die, number)
-    for _, rv in ipairs(die.getRotationValues() or {}) do
-        if tostring(rv.value) == tostring(number) then
-            die.setRotation(rv.rotation)
-            return
-        end
-    end
+-- Called by a linked die's script when 0 is pressed over it.
+function releaseDie(params)
+    local die = getObjectFromGUID(params.guid)
+    if die then unlinkDie(die, true) end
 end
 
 -- ============ RANGE RINGS ============
@@ -391,14 +424,6 @@ function onObjectDrop(player_color, obj)
     end
 end
 
--- Number keys over one of this model's dice (universal event: object scripts get it too).
--- 1-6 turn it to that face, 0 takes it off. Returning true stops TTS's own handling.
-function onObjectNumberTyped(obj, player_color, number)
-    if obj == nil or not findDie(obj.getGUID()) then return end
-    if number == 0 then unlinkDie(obj, true) else setFace(obj, number) end
-    return true
-end
-
 -- If the model is deleted, its dice become normal dice instead of hanging in the air.
 function onDestroy()
     for _, g in ipairs(state.dice) do
@@ -439,7 +464,10 @@ function onLoad(saved_data)
         renderPanel()
         for _, g in ipairs(state.dice) do
             local o = getObjectFromGUID(g)
-            if o then o.setLock(true) end
+            if o then
+                o.memo = self.getGUID()   -- the die's script finds its model by this
+                o.setLock(true)
+            end
         end
         placeDice()
     end, 30)

@@ -12,3 +12,6 @@
 *.zip
 *.tmp
 ~$*
+
+# Output of tools/tts_bridge.py
+tts.log
