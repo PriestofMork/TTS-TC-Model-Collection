@@ -16,8 +16,9 @@ local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-C
 local SPAWN_TAG = "TCM_Spawned"
 
 -- Layout, in world units relative to the spawner (follows its position and rotation, not its
--- scale). Rows start behind the spawner (local +z, away from a player reading the panel).
-local LAYOUT_GAP    = 2      -- between the spawner's back edge and the first label
+-- scale). Rows start behind the panel as seen by a player reading it (local -z: tested in TTS,
+-- a panel with rotation "0 0 180" reads upright from the object's +z side).
+local LAYOUT_GAP    = 1.5    -- between the panel's back edge and the first label
 local MAX_ROW_WIDTH = 30     -- rows wrap after this width
 local MODEL_PAD     = 0.4    -- space between models in a row
 local ROW_GAP       = 0.6    -- space between rows
@@ -27,9 +28,9 @@ local SPAWN_HEIGHT  = 0.5    -- models are spawned this far above the table and 
 -- Catalog models have rotY 0 (export resets it). They get the spawner's yaw plus this.
 -- Change to 180 if models come out facing away from the players.
 local MODEL_YAW = 0
--- 3D text lying flat on the table: pitch 90. Adjust LABEL_YAW if labels read upside down.
+-- 3D text lying flat on the table: pitch 90. Yaw 180 reads upright for the panel's reader.
 local LABEL_PITCH = 90
-local LABEL_YAW   = 0
+local LABEL_YAW   = 180
 local LABEL_FONT  = 48
 
 local BATCH_SIZE = 15        -- objects spawned or destroyed per frame
@@ -48,6 +49,8 @@ local busy         = false
 local status       = "Loading catalog..."
 local renderPending = false
 local unitCache    = {}      -- unit file -> decoded entries (for the loaded catalog version)
+local panelHeight  = 720     -- UI units; set by buildXml, used by the layout
+local layoutEdge   = nil     -- distance from the spawner's centre to the first row (world units)
 
 -- ============ UTIL ============
 local function xmlEscape(s)
@@ -65,17 +68,40 @@ local function tableY()
     return b.center.y - b.size.y / 2
 end
 
--- Layout position (x across, z rows going back) -> world position. positionToWorld uses
--- local (scaled) units, so divide by scale to keep the layout in world units.
+-- Layout position -> world position. x runs left to right and z away from the reader
+-- (both in world units from the back edge of the panel). The panel is usually much bigger
+-- than the object, so its size decides where the layout starts. positionToWorld uses local
+-- (scaled) units: UI units are 100 per local unit, and dividing by scale gives world units.
 local function layoutToWorld(x, z)
     local s = self.getScale()
-    local backEdge = self.getBoundsNormalized().size.z / 2
-    local pos = self.positionToWorld(Vector(x / s.x, 0, (backEdge + LAYOUT_GAP + z) / s.z))
+    if not layoutEdge then
+        -- Measured once per layout, so switching to a faction with a taller menu later
+        -- doesn't shift where new rows go relative to existing ones.
+        local panelHalf = panelHeight / 2 / 100 * UI_SCALE * s.z
+        layoutEdge = math.max(self.getBoundsNormalized().size.z / 2, panelHalf) + LAYOUT_GAP
+    end
+    local pos = self.positionToWorld(Vector(-x / s.x, 0, -(layoutEdge + z) / s.z))
     pos.y = tableY() + SPAWN_HEIGHT
     return pos
 end
 
 local function unitKey(f, u) return f .. "/" .. u end
+
+-- TTS only calls onSave when the game is saved. Writing the state right away means a script
+-- reload (e.g. pasting a new version) keeps the token and still recognises its own models.
+local function saveState()
+    self.script_state = onSave()
+end
+
+-- All objects carrying the spawn tag. getAllObjects + hasTag instead of getObjectsWithTag,
+-- which can throw while the tag has never been used in this save.
+local function spawnedObjects()
+    local list = {}
+    for _, obj in ipairs(getAllObjects()) do
+        if obj.hasTag(SPAWN_TAG) then list[#list + 1] = obj end
+    end
+    return list
+end
 
 -- Models of a unit visible under the current subfaction filter.
 local function unitCount(unit)
@@ -92,74 +118,84 @@ local function entryMatches(entry)
 end
 
 -- ============ STATUS / UI ============
--- setXml takes a frame or two to apply and setValue on the old UI is lost when it is
--- replaced, so status is baked into each render and re-applied a few frames later.
+local render
+
+-- Status is part of the XML, so changing it re-renders the panel. Calling self.UI.setValue
+-- instead throws a null-reference error while the panel doesn't exist yet (e.g. in onLoad).
 local function setStatus(text)
     status = text
-    self.UI.setValue("status", status)
-    Wait.frames(function() self.UI.setValue("status", status) end, 5)
+    render()
 end
 
+-- The panel's height is the sum of its rows, so it grows with the unit list instead of
+-- needing a scroll view (TTS didn't draw the scroll view's contents).
 local function buildXml()
-    local x = {}
+    local x, height = {}, 24   -- 24 = top + bottom padding
     local function add(s) x[#x + 1] = s end
+    local function row(h, s)
+        height = height + h + 6   -- 6 = layout spacing
+        add(s)
+    end
 
-    add('<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="17"/><Dropdown fontSize="18"/></Defaults>')
-    add('<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="460" height="720" scale="'
-        .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">')
-    add('<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">')
-    add('<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Miniatures</Text>')
+    row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Miniatures</Text>')
 
     local fe = index and factionById[sel.f]
     if fe then
-        add('<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">')
+        local opts = {}
         for _, f in ipairs(index.factions) do
-            add('<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>')
+            opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
         end
-        add('</Dropdown>')
+        row(40, '<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">' .. table.concat(opts) .. '</Dropdown>')
 
         local subs = fe.subfactions or {}
         if #subs > 0 then
-            add('<Dropdown id="sub" preferredHeight="40" onValueChanged="ui_sub">')
-            add('<Option' .. (sel.sub == nil and ' selected="true"' or '') .. '>All subfactions</Option>')
-            for _, s in ipairs(subs) do
-                add('<Option' .. (s.id == sel.sub and ' selected="true"' or '') .. '>' .. xmlEscape(s.name) .. '</Option>')
+            opts = {'<Option' .. (sel.sub == nil and ' selected="true"' or '') .. '>All subfactions</Option>'}
+            for _, sf in ipairs(subs) do
+                opts[#opts + 1] = '<Option' .. (sf.id == sel.sub and ' selected="true"' or '') .. '>' .. xmlEscape(sf.name) .. '</Option>'
             end
-            add('</Dropdown>')
+            row(40, '<Dropdown id="sub" preferredHeight="40" onValueChanged="ui_sub">' .. table.concat(opts) .. '</Dropdown>')
         end
 
-        add('<Text preferredHeight="22" fontSize="15" color="#AAAAAA" alignment="MiddleLeft">Click a unit to spawn it, click again to remove it.</Text>')
-        local rows = {}
+        row(22, '<Text preferredHeight="22" fontSize="15" color="#AAAAAA" alignment="MiddleLeft">Click a unit to spawn it, click again to remove it.</Text>')
+
+        -- Unit buttons, two per row.
+        local buttons = {}
         for _, u in ipairs(fe.units) do
             local n = unitCount(u)
             if n > 0 then
                 local on = spawned[unitKey(fe.id, u.id)]
-                rows[#rows + 1] = '<Button id="u:' .. xmlEscape(u.id) .. '" onClick="ui_unit" preferredHeight="34"'
+                buttons[#buttons + 1] = '<Button id="u:' .. xmlEscape(u.id) .. '" onClick="ui_unit" fontSize="15"'
                     .. (on and ' colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF"' or '')
-                    .. '>' .. (on and '[spawned] ' or '') .. xmlEscape(u.name) .. ' (' .. n .. ')</Button>'
+                    .. '>' .. xmlEscape(u.name) .. ' (' .. n .. ')</Button>'
             end
         end
-        -- A scroll view's content needs an explicit height.
-        add('<VerticalScrollView preferredHeight="380" scrollSensitivity="30" color="#00000000">')
-        add('<VerticalLayout height="' .. math.max(#rows * 38, 10) .. '" spacing="4" childForceExpandHeight="false">')
-        add(#rows > 0 and table.concat(rows) or '<Text color="#AAAAAA">No models for this filter.</Text>')
-        add('</VerticalLayout></VerticalScrollView>')
+        if #buttons == 0 then
+            row(30, '<Text preferredHeight="30" color="#AAAAAA">No models for this filter.</Text>')
+        end
+        for i = 1, #buttons, 2 do
+            row(40, '<HorizontalLayout preferredHeight="40" spacing="6">' .. buttons[i]
+                .. (buttons[i + 1] or '<Text></Text>') .. '</HorizontalLayout>')
+        end
 
-        add('<HorizontalLayout preferredHeight="44" spacing="6">')
-        add('<Button onClick="ui_spawnFaction">Spawn whole faction</Button>')
-        add('<Button onClick="ui_clearAll">Clear all</Button>')
-        add('</HorizontalLayout>')
+        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
+            .. '<Button onClick="ui_spawnFaction">Spawn whole faction</Button>'
+            .. '<Button onClick="ui_clearAll">Clear all</Button></HorizontalLayout>')
     else
-        add('<Button onClick="ui_reload" preferredHeight="40">Reload catalog</Button>')
+        row(40, '<Button onClick="ui_reload" preferredHeight="40">Reload catalog</Button>')
     end
 
-    add('<Text id="status" preferredHeight="80" fontSize="15" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
-    add('</VerticalLayout></Panel>')
-    return table.concat(x)
+    row(60, '<Text preferredHeight="60" fontSize="15" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
+
+    panelHeight = height
+    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="17"/><Dropdown fontSize="18"/></Defaults>'
+        .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="460" height="' .. height
+        .. '" scale="' .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">'
+        .. '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
+        .. table.concat(x) .. '</VerticalLayout></Panel>'
 end
 
 -- Coalesce several render() calls in one frame into a single setXml.
-local function render()
+function render()
     if renderPending then return end
     renderPending = true
     Wait.frames(function()
@@ -175,9 +211,12 @@ local queue, queueRunning, queueDone = {}, false, nil
 
 local function runQueue()
     for _ = 1, BATCH_SIZE do
+        -- MoonSharp's table.remove throws on an empty table (standard Lua returns nil).
+        if #queue == 0 then break end
         local job = table.remove(queue, 1)
-        if not job then break end
-        job()
+        -- One failing job must not stop the queue, or `busy` would stay set forever.
+        local ok, err = pcall(job)
+        if not ok then print("[TC Spawner] " .. tostring(err)) end
     end
     if #queue > 0 then
         Wait.frames(runQueue, 1)
@@ -214,7 +253,8 @@ end
 
 local function spawnModel(data, pos, memo)
     local t = data.Transform or {}
-    -- Tag and memo go into the data before spawning, so no per-object call is needed after.
+    -- Tag and memo go into the data before spawning and are set again once the object exists,
+    -- in case spawnObjectData ignores either field.
     data.Memo = memo
     data.Tags = data.Tags or {}
     local hasTag = false
@@ -226,6 +266,10 @@ local function spawnModel(data, pos, memo)
         data     = data,
         position = pos,
         rotation = {t.rotX or 0, self.getRotation().y + MODEL_YAW, t.rotZ or 0},
+        callback_function = function(obj)
+            obj.memo = memo
+            if not obj.hasTag(SPAWN_TAG) then obj.addTag(SPAWN_TAG) end
+        end,
     })
 end
 
@@ -234,34 +278,37 @@ end
 local function queueUnit(f, unit, entries)
     local key = unitKey(f, unit.id)
     local memo = token .. "|" .. key
-    local x0 = -MAX_ROW_WIDTH / 2
+    if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the panel again
 
-    local labelPos = layoutToWorld(x0 + MAX_ROW_WIDTH / 2, cursorZ + LABEL_DEPTH / 2)
+    -- Label and rows are centred on the spawner.
+    local labelPos = layoutToWorld(0, cursorZ + LABEL_DEPTH / 2)
     local label = unit.name .. " (" .. #entries .. ")"
     queue[#queue + 1] = function() spawnLabel(label, labelPos, memo) end
     cursorZ = cursorZ + LABEL_DEPTH
 
-    local x, rowDepth, row = x0, 0, {}
+    local x, rowDepth, row = 0, 0, {}   -- x = width used so far in this row
     local function flushRow()
         local zc = cursorZ + rowDepth / 2
+        local rowWidth = x - MODEL_PAD
         for _, item in ipairs(row) do
-            local pos = layoutToWorld(item.x, zc)
+            local pos = layoutToWorld(item.x - rowWidth / 2, zc)
             local data = item.data
             queue[#queue + 1] = function() spawnModel(data, pos, memo) end
         end
         cursorZ = cursorZ + rowDepth + ROW_GAP
-        x, rowDepth, row = x0, 0, {}
+        x, rowDepth, row = 0, 0, {}
     end
 
     for _, entry in ipairs(entries) do
         local w, d = entry.w or 1.5, entry.d or 1.5
-        if #row > 0 and x + w > x0 + MAX_ROW_WIDTH then flushRow() end
+        if #row > 0 and x + w > MAX_ROW_WIDTH then flushRow() end
         row[#row + 1] = {data = entry.data, x = x + w / 2}
         x = x + w + MODEL_PAD
         if d > rowDepth then rowDepth = d end
     end
     if #row > 0 then flushRow() end
     spawned[key] = true
+    saveState()
 end
 
 -- Fetches a unit file (cached per catalog version) and passes the decoded entries to callback,
@@ -316,15 +363,14 @@ local function spawnUnits(f, units, done)
     nextUnit()
 end
 
--- Destroys this spawner's objects, all of them or only one unit's (key).
+-- Destroys one unit's objects from this spawner (key), or with key nil every TC spawned
+-- object on the table, whichever spawner made it. Clearing everything also catches models
+-- left behind by an older copy of this spawner (e.g. after pasting a new script).
 local function clearSpawned(key, done)
-    local prefix = token .. "|"
-    local wanted = key and (prefix .. key) or nil
+    local wanted = key and (token .. "|" .. key) or nil
     local count = 0
-    for _, obj in ipairs(getObjectsWithTag(SPAWN_TAG)) do
-        local memo = obj.memo or ""
-        local mine = wanted and memo == wanted or (not wanted and string.find(memo, prefix, 1, true) == 1)
-        if mine then
+    for _, obj in ipairs(spawnedObjects()) do
+        if not wanted or obj.memo == wanted then
             count = count + 1
             queue[#queue + 1] = function()
                 if obj ~= nil then obj.destruct() end   -- destroyed objects compare equal to nil
@@ -333,6 +379,7 @@ local function clearSpawned(key, done)
     end
     if key then spawned[key] = nil else spawned = {} end
     if next(spawned) == nil then cursorZ = 0 end   -- rows are not compacted, only reset when empty
+    saveState()
     flushQueue(function() done(count) end)
 end
 
@@ -419,7 +466,8 @@ function ui_sub(player, value)
 end
 
 function ui_unit(player, value, id)
-    if busy or not index then return end
+    if busy then setStatus("Still busy, try again in a moment.") return end
+    if not index then return end
     local uid = string.sub(id, 3)   -- strip "u:"
     local fe = factionById[sel.f]
     local key = unitKey(fe.id, uid)
@@ -446,7 +494,8 @@ function ui_unit(player, value, id)
 end
 
 function ui_spawnFaction()
-    if busy or not index then return end
+    if busy then setStatus("Still busy, try again in a moment.") return end
+    if not index then return end
     local fe = factionById[sel.f]
     local units = {}
     for _, u in ipairs(fe.units) do
@@ -462,7 +511,7 @@ function ui_spawnFaction()
 end
 
 function ui_clearAll()
-    if busy then return end
+    if busy then setStatus("Still busy, try again in a moment.") return end
     busy = true
     clearSpawned(nil, function(n)
         busy = false
@@ -475,28 +524,49 @@ function ui_reload() loadCatalog() end
 
 -- ============ SAVE / LOAD ============
 function onSave()
-    return JSON.encode({token = token, cursorZ = cursorZ, f = sel.f, sub = sel.sub})
+    return JSON.encode({token = token, cursorZ = cursorZ, layoutEdge = layoutEdge, f = sel.f, sub = sel.sub})
+end
+
+-- Each step runs protected and reports its name, so a failure in TTS says where it happened
+-- instead of a bare "Object reference not set to an instance of an object".
+local function step(name, fn)
+    local ok, err = pcall(fn)
+    if not ok then
+        status = "Error in " .. name .. ": " .. tostring(err)
+        print("[TC Spawner] " .. status)
+        render()
+    end
+    return ok
 end
 
 function onLoad(saved_data)
-    if saved_data and saved_data ~= "" then
-        local ok, data = pcall(JSON.decode, saved_data)
-        if ok and type(data) == "table" then
-            token, cursorZ, sel.f, sel.sub = data.token, data.cursorZ or 0, data.f, data.sub
+    step("reading saved state", function()
+        if saved_data and saved_data ~= "" then
+            local data = JSON.decode(saved_data)
+            if type(data) == "table" then
+                token, cursorZ, layoutEdge = data.token, data.cursorZ or 0, data.layoutEdge
+                sel.f, sel.sub = data.f, data.sub
+            end
         end
-    end
+    end)
     if not token then
         math.randomseed(os.time())
         token = "tcm" .. os.time() .. math.random(100000, 999999)
+        saveState()
     end
+    render()
 
-    -- Rebuild which units are on the table from the spawned objects themselves.
-    local prefix = token .. "|"
-    for _, obj in ipairs(getObjectsWithTag(SPAWN_TAG)) do
-        local memo = obj.memo or ""
-        if string.find(memo, prefix, 1, true) == 1 then spawned[string.sub(memo, #prefix + 1)] = true end
-    end
-    if next(spawned) == nil then cursorZ = 0 end
-
-    loadCatalog()
+    -- Other objects may still be loading during onLoad; look at them a frame later.
+    Wait.frames(function()
+        step("finding spawned models", function()
+            -- Rebuild which units are on the table from the spawned objects themselves.
+            local prefix = token .. "|"
+            for _, obj in ipairs(spawnedObjects()) do
+                local memo = obj.memo or ""
+                if string.find(memo, prefix, 1, true) == 1 then spawned[string.sub(memo, #prefix + 1)] = true end
+            end
+            if next(spawned) == nil then cursorZ = 0 end
+        end)
+        step("loading the catalog", loadCatalog)
+    end, 1)
 end

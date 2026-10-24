@@ -145,12 +145,13 @@ local function tagLabel(f, u, subs)
 end
 
 -- ============ STATUS / UI ============
--- setXml only takes effect a frame or two later, and setValue on the old UI is lost when it
--- is replaced. So status is baked into every render AND re-applied a few frames later.
+local render
+
+-- Status is part of the XML, so changing it re-renders the panel. Calling self.UI.setValue
+-- instead throws a null-reference error while the panel doesn't exist yet (e.g. in onLoad).
 local function setStatus(text)
     status = text
-    self.UI.setValue("status", status)
-    Wait.frames(function() self.UI.setValue("status", status) end, 5)
+    render()
 end
 
 local function buildXml()
@@ -213,7 +214,7 @@ local function buildXml()
 end
 
 -- Coalesce several render() calls in one frame into a single setXml.
-local function render()
+function render()   -- assigns the local declared above setStatus
     if renderPending then return end
     renderPending = true
     Wait.frames(function()
@@ -454,8 +455,9 @@ local function submit()
     ensureBag(f, u, function(bag)
         local function step()
             for _ = 1, BATCH_SIZE do
+                -- MoonSharp's table.remove throws on an empty table (standard Lua returns nil).
+                if #items == 0 then break end
                 local it = table.remove(items, 1)
-                if not it then break end
                 if it.obj ~= nil then
                     tagObject(it.obj, f, u, subs)
                     bag.putObject(it.obj)
