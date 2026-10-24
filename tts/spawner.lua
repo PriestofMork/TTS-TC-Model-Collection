@@ -9,7 +9,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 3
+local SPAWNER_VERSION = 4
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -69,6 +69,8 @@ local layoutEdge   = nil     -- distance from the spawner's centre to the first 
 local showArea     = true    -- spawn-area indicator visible
 local scriptsOn    = true    -- put tts/model.lua into spawned models
 local modelScript  = nil     -- tts/model.lua, fetched on load
+local importing    = false   -- the panel shows the warband import box
+local importText   = ""      -- what was pasted; kept here, the box itself isn't re-rendered
 
 -- ============ UTIL ============
 local function xmlEscape(s)
@@ -189,7 +191,17 @@ local function buildXml()
     row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Miniatures</Text>')
 
     local fe = index and factionById[sel.f]
-    if fe then
+    if fe and importing then
+        -- Paste box. The text lives in importText (onValueChanged); re-rendering the panel
+        -- would empty the box, so status changes during the import don't touch it.
+        row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">Paste the TTS export from Trench Companion. '
+            .. 'Faction and subfaction filter above decide which models are used.</Text>')
+        row(200, '<InputField id="importBox" preferredHeight="200" fontSize="12" lineType="MultiLineNewline" '
+            .. 'characterLimit="0" onValueChanged="ui_importText"></InputField>')
+        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
+            .. '<Button onClick="ui_importGo" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Import</Button>'
+            .. '<Button onClick="ui_importCancel">Cancel</Button></HorizontalLayout>')
+    elseif fe then
         local opts = {}
         for _, f in ipairs(index.factions) do
             opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
@@ -237,6 +249,7 @@ local function buildXml()
             .. '<Button onClick="ui_loadAll" fontSize="15">Load positions</Button>'
             .. '<Button onClick="ui_toggleScripts" fontSize="15">' .. (scriptsOn and 'Model scripts: on' or 'Model scripts: off')
             .. '</Button></HorizontalLayout>')
+        row(40, '<Button onClick="ui_importOpen" preferredHeight="40">Import warband (Trench Companion)</Button>')
     else
         row(40, '<Button onClick="ui_reload" preferredHeight="40">Reload catalog</Button>')
     end
@@ -373,11 +386,11 @@ local function spawnPlatform(pos, width, depth, memo)
     })
 end
 
--- Lays out one unit on its own platform: a label, then rows of models wrapped at
--- MAX_ROW_WIDTH, each row as deep as its deepest model. w/d come from the intake because
--- bounds aren't known before the models load.
-local function queueUnit(f, unit, entries)
-    local key = unitKey(f, unit.id)
+-- Lays out one block on its own platform: a label, then rows of models wrapped at
+-- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {data=, w=, d=, f=}; w/d come
+-- from the intake because bounds aren't known before the models load, f is the faction the
+-- model script gets (activation icon).
+local function queueBlock(key, label, items)
     local memo = token .. "|" .. key
     if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the panel again
     layoutEdge = getLayoutEdge()
@@ -389,7 +402,6 @@ local function queueUnit(f, unit, entries)
 
     -- Label and rows are centred on the spawner.
     local labelPos = layoutToWorld(0, z + LABEL_DEPTH / 2, top + 0.05)
-    local label = unit.name .. " (" .. #entries .. ")"
     jobs[#jobs + 1] = function() spawnLabel(label, labelPos, memo) end
     z = z + LABEL_DEPTH
 
@@ -400,17 +412,17 @@ local function queueUnit(f, unit, entries)
         if rowWidth > widest then widest = rowWidth end
         for _, item in ipairs(row) do
             local pos = layoutToWorld(item.x - rowWidth / 2, zc, top + SPAWN_HEIGHT)
-            local data = item.data
+            local data, f = item.data, item.f
             jobs[#jobs + 1] = function() spawnModel(data, pos, memo, f) end
         end
         z = z + rowDepth + ROW_GAP
         x, rowDepth, row = 0, 0, {}
     end
 
-    for _, entry in ipairs(entries) do
-        local w, d = entry.w or 1.5, entry.d or 1.5
+    for _, item in ipairs(items) do
+        local w, d = item.w or 1.5, item.d or 1.5
         if #row > 0 and x + w > MAX_ROW_WIDTH then flushRow() end
-        row[#row + 1] = {data = entry.data, x = x + w / 2}
+        row[#row + 1] = {data = item.data, f = item.f, x = x + w / 2}
         x = x + w + MODEL_PAD
         if d > rowDepth then rowDepth = d end
     end
@@ -429,6 +441,12 @@ local function queueUnit(f, unit, entries)
     cursorZ = blockStart + depth + BLOCK_GAP
     spawned[key] = true
     saveState()
+end
+
+local function queueUnit(f, unit, entries)
+    local items = {}
+    for _, e in ipairs(entries) do items[#items + 1] = {data = e.data, w = e.w, d = e.d, f = f} end
+    queueBlock(unitKey(f, unit.id), unit.name .. " (" .. #entries .. ")", items)
 end
 
 -- Fetches a unit file (cached per catalog version) and passes the decoded entries to callback,
@@ -483,6 +501,199 @@ local function spawnUnits(f, units, done)
     nextUnit()
 end
 
+-- ============ WARBAND IMPORT ============
+-- Trench Companion's TTS export: warband-name and models[], each with model-id (e.g.
+-- md_lieutenant_eire = base "lieutenant", variant "eire"), name, stats and rule lists.
+
+local function normName(s) return (string.gsub(string.lower(s), "[^a-z0-9]", "")) end
+
+-- model-id -> {f=, unit=}. Full ids from a unit's `companion` list win, then companion bases,
+-- then the unit name with spaces and punctuation removed. Built from the catalog index, so
+-- only units that have models can match.
+local importFull, importBase = {}, {}
+local function buildImportIndex()
+    importFull, importBase = {}, {}
+    for _, f in ipairs(index.factions) do
+        for _, u in ipairs(f.units) do
+            local hit = {f = f.id, unit = u}
+            for _, c in ipairs(u.companion or {}) do
+                if string.sub(c, 1, 3) == "md_" then importFull[c] = importFull[c] or hit
+                else importBase[c] = importBase[c] or hit end
+            end
+            local n = normName(u.name)
+            importBase[n] = importBase[n] or hit
+        end
+    end
+end
+
+local function matchModel(modelId)
+    if importFull[modelId] then return importFull[modelId] end
+    local base = string.sub(modelId, 4)                  -- strip "md_"
+    local cut = string.find(base, "_", 1, true)
+    if cut then base = string.sub(base, 1, cut - 1) end
+    return importBase[base]
+end
+
+local function joinField(list, field)
+    local out = {}
+    for _, e in ipairs(list or {}) do out[#out + 1] = tostring(e[field]) end
+    return table.concat(out, ", ")
+end
+
+-- Equipment details (range, keywords) by item name, from config/equipment.json. The export
+-- only has names and types; this table was read from Trench Companion's battlekit pages.
+local equipment = nil
+
+-- How each equipment type is shown: symbol, colour, whether its range is listed, and the
+-- order of the groups. Matches the stat blocks Niklas uses on his models.
+local EQUIP_STYLE = {
+    ["melee weapon"]  = {order = 1, symbol = "✞", color = "fa8231", range = true},
+    ["ranged weapon"] = {order = 2, symbol = "⊕", color = "C966E5", range = true},
+    ["equipment"]     = {order = 3, symbol = "✜", color = "f7b731"},
+    ["shield"]        = {order = 4, symbol = "☩", color = "fa8231"},
+    ["armour"]        = {order = 5, symbol = "☩", color = "b2b7be"},
+    ["grenade"]       = {order = 6, symbol = "✢", color = "fa8231"},
+    ["special"]       = {order = 7, symbol = "✜", color = "fa8231"},
+}
+
+local function upperList(list)
+    local out = {}
+    for _, k in ipairs(list or {}) do out[#out + 1] = string.upper(k) end
+    return table.concat(out, ", ")
+end
+
+-- Nickname: the player's name, the model type, the stat line and the keywords.
+local function nameBlock(m)
+    return "[b]☩☩ " .. tostring(m.name or m["model-name"]) .. " ☩☩[/b]\n"
+        .. "(" .. tostring(m["model-name"]) .. ")\n"
+        .. "[b][89E1E3]" .. tostring(m["stat-move"]) .. "[-][/b] | [b][fa8231]Mel. " .. tostring(m["stat-melee"])
+        .. "D[-][/b] | [b][C966E5]Ran. " .. tostring(m["stat-ranged"]) .. "D[-][/b] | [b][b2b7be]Arm. "
+        .. tostring(m["stat-armour"]) .. "[-][/b]\n"
+        .. joinField(m.keywords, "keyword-name")
+end
+
+-- Description: equipment grouped by type (with range and keywords from the equipment table),
+-- then abilities and upgrades, then advancements and injuries.
+local function describe(m)
+    local items = {}
+    for i, e in ipairs(m.equipment or {}) do
+        local style = EQUIP_STYLE[e["equipment-type"]] or EQUIP_STYLE["equipment"]
+        items[#items + 1] = {e = e, style = style, i = i}
+    end
+    table.sort(items, function(a, b)
+        if a.style.order ~= b.style.order then return a.style.order < b.style.order end
+        return a.i < b.i
+    end)
+    local lines = {}
+    for _, it in ipairs(items) do
+        local name = tostring(it.e["equipment-name"])
+        lines[#lines + 1] = "[b][" .. it.style.color .. "]" .. it.style.symbol .. " " .. name .. "[-][/b]"
+        local info = equipment and equipment[name]
+        if info then
+            local detail = {}
+            if it.style.range and info.r then detail[#detail + 1] = info.r end
+            if info.k then detail[#detail + 1] = upperList(info.k) end
+            if #detail > 0 then lines[#lines + 1] = table.concat(detail, " | ") end
+        end
+    end
+    -- A group of lists separated from what comes before by one blank line.
+    -- parts = {{list, field, colour, symbol}, ...}
+    local function group(parts)
+        local first = true
+        for _, p in ipairs(parts) do
+            for _, x in ipairs(p[1] or {}) do
+                if first and #lines > 0 then lines[#lines + 1] = "" end
+                first = false
+                lines[#lines + 1] = "[b][" .. p[3] .. "]" .. p[4] .. " " .. tostring(x[p[2]]) .. "[-][/b]"
+            end
+        end
+    end
+    group({{m.abilities, "ability-name", "0fb9b1", "✧"}, {m.upgrades, "upgrade-name", "618DF4", "✹"}})
+    group({{m.advancements, "advancement-name", "20bf6b", "△"}})
+    group({{m.injuries, "injury-name", "eb3b5a", "✖"}})
+    return table.concat(lines, "\n")
+end
+
+-- Spawns a whole warband on one platform labelled with its name. Each warband member gets a
+-- catalog model of its unit; copies of the same unit get different models where the catalog
+-- has several. The subfaction filter applies to the selected faction's units. Mercenaries get
+-- the warband's faction for their activation icon.
+local function importWarband(warband, done)
+    local members, missing, order = {}, {}, {}
+    local factionVotes = {}
+    for _, m in ipairs(warband.models or {}) do
+        local hit = type(m["model-id"]) == "string" and matchModel(m["model-id"]) or nil
+        if hit then
+            members[#members + 1] = {m = m, hit = hit}
+            if hit.f ~= "mercenaries" then factionVotes[hit.f] = (factionVotes[hit.f] or 0) + 1 end
+        else
+            local name = tostring(m["model-name"] or m["model-id"])
+            if not missing[name] then order[#order + 1] = name end
+            missing[name] = (missing[name] or 0) + 1
+        end
+    end
+    local warbandFaction, best = sel.f, 0
+    for f, n in pairs(factionVotes) do
+        if n > best then warbandFaction, best = f, n end
+    end
+
+    -- Download each needed unit file once, then build the block.
+    local units, seen = {}, {}
+    for _, mb in ipairs(members) do
+        local key = unitKey(mb.hit.f, mb.hit.unit.id)
+        if not seen[key] then
+            seen[key] = true
+            units[#units + 1] = mb.hit
+        end
+    end
+    local entriesByKey, i = {}, 0
+    local function finish()
+        local items, used = {}, {}
+        for _, mb in ipairs(members) do
+            local key = unitKey(mb.hit.f, mb.hit.unit.id)
+            local list = {}
+            for _, e in ipairs(entriesByKey[key] or {}) do
+                -- The subfaction filter only means something for the selected faction's units.
+                if mb.hit.f ~= sel.f or entryMatches(e) then list[#list + 1] = e end
+            end
+            if #list == 0 then list = entriesByKey[key] or {} end
+            if #list > 0 then
+                used[key] = (used[key] or 0) + 1
+                local e = list[(used[key] - 1) % #list + 1]
+                local data = JSON.decode(JSON.encode(e.data))   -- own copy: name/description differ
+                data.Nickname = nameBlock(mb.m)
+                data.Description = describe(mb.m)
+                items[#items + 1] = {data = data, w = e.w, d = e.d, f = warbandFaction}
+            end
+        end
+        if #items > 0 then
+            local name = tostring(warband["warband-name"] or "Warband")
+            queueBlock("warband/" .. tostring(warband["warband-id"] or name), name, items)
+        end
+        flushQueue(function() done(#items, order, missing) end)
+    end
+    local function nextUnit()
+        i = i + 1
+        local hit = units[i]
+        if not hit then
+            if equipment then finish() return end
+            -- Equipment details for the descriptions; without them only names are shown.
+            WebRequest.get(RAW_BASE .. "config/equipment.json?v=" .. tostring(index.version), function(req)
+                local ok, data = pcall(JSON.decode, req.text or "")
+                if not req.is_error and ok and type(data) == "table" then equipment = data end
+                finish()
+            end)
+            return
+        end
+        setStatus("Loading " .. hit.unit.name .. "...")
+        fetchUnit(hit.unit, function(entries)
+            entriesByKey[unitKey(hit.f, hit.unit.id)] = entries
+            nextUnit()
+        end)
+    end
+    nextUnit()
+end
+
 -- Destroys one unit's objects from this spawner (key), or with key nil every TC spawned
 -- object on the table, whichever spawner made it. Clearing everything also catches models
 -- left behind by an older copy of this spawner (e.g. after pasting a new script).
@@ -530,6 +741,7 @@ local function applyIndex(text)
     end
     index, factionById, unitCache = data, {}, {}
     for _, f in ipairs(data.factions) do factionById[f.id] = f end
+    buildImportIndex()
     if not factionById[sel.f] then sel.f, sel.sub = data.factions[1].id, nil end
     setStatus("Catalog version " .. tostring(data.version) .. " loaded.")
     render()
@@ -667,6 +879,39 @@ function ui_clearAll()
 end
 
 function ui_reload() loadCatalog() end
+
+function ui_importOpen()
+    if busy then setStatus("Still busy, try again in a moment.") return end
+    importing, importText = true, ""
+    setStatus("Paste the export, then press Import.")
+end
+
+function ui_importCancel()
+    importing, importText = false, ""
+    setStatus("Import cancelled.")
+end
+
+function ui_importText(player, value) importText = value or "" end
+
+function ui_importGo()
+    if busy then return end
+    local ok, warband = pcall(JSON.decode, importText)
+    if not ok or type(warband) ~= "table" or type(warband.models) ~= "table" then
+        setStatus("That doesn't look like a Trench Companion TTS export (no models found).")
+        return
+    end
+    importing, importText, busy = false, "", true
+    importWarband(warband, function(n, order, missing)
+        busy = false
+        local text = "Imported " .. n .. " model(s) of " .. tostring(warband["warband-name"]) .. "."
+        if #order > 0 then
+            local parts = {}
+            for _, name in ipairs(order) do parts[#parts + 1] = name .. (missing[name] > 1 and (" x" .. missing[name]) or "") end
+            text = text .. " Not in the catalog yet: " .. table.concat(parts, ", ")
+        end
+        setStatus(text)
+    end)
+end
 
 function ui_toggleScripts()
     scriptsOn = not scriptsOn

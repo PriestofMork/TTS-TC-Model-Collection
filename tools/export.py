@@ -250,12 +250,16 @@ def main():
             for e in entries:
                 for s in e["s"]:
                     subs[s] = subs.get(s, 0) + 1
-            index_units.append({
+            entry = {
                 "id": unit["id"], "name": unit["name"], "count": len(entries),
                 "any": sum(1 for e in entries if not e["s"]),  # usable by every subfaction
                 "subs": dict(sorted(subs.items())),            # subfaction id -> model count
                 "file": rel,
-            })
+            }
+            # Trench Companion model ids that don't match the unit name (warband import).
+            if unit.get("companion"):
+                entry["companion"] = unit["companion"]
+            index_units.append(entry)
             summary.append(f"  {faction['name']} / {unit['name']}: {len(entries)}")
         if index_units:
             index_factions.append({

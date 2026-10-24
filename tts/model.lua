@@ -277,9 +277,10 @@ function onNumberTyped(player_color, number)
         model.call("releaseDie", {guid = self.getGUID()})
         return true
     end
-    -- Not setValue: that lifts the die and lets physics drop it.
+    -- Not setValue: that lifts the die and lets physics drop it. A smooth turn keeps a
+    -- locked die where it is.
     for _, rv in ipairs(self.getRotationValues() or {}) do
-        if tostring(rv.value) == tostring(number) then self.setRotation(rv.rotation) end
+        if tostring(rv.value) == tostring(number) then self.setRotationSmooth(rv.rotation, false, false) end
     end
     return true
 end
@@ -292,12 +293,14 @@ local function addDie(die)
     saveState()
 end
 
--- Dice without a script get DIE_SCRIPT; a new script only runs after a reload, which replaces
--- the object. Dice that already have another script are linked without it (number keys then
--- behave like TTS's default).
+-- Dice without a script, or with an older version of ours, get DIE_SCRIPT; a new script only
+-- runs after a reload, which replaces the object. Dice with someone else's script are linked
+-- without it (number keys then behave like TTS's default).
 local function linkDie(die)
     die.memo = self.getGUID()
-    if die.getLuaScript() ~= "" then   -- ours already, or someone else's
+    local script = die.getLuaScript()
+    local ours = string.find(script, "TC Miniatures die marker", 1, true) ~= nil
+    if script == DIE_SCRIPT or (script ~= "" and not ours) then
         addDie(die)
         return
     end

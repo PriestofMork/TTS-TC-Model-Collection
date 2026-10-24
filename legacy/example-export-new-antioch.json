@@ -1,0 +1,407 @@
+{
+  "warband-id": 358871,
+  "warband-url": "https://trench-companion.com/warband/detail/358871",
+  "warband-name": "Eire",
+  "ducat-bank": 1020,
+  "glory-bank": 59,
+  "ducat-rating": 1080,
+  "glory-rating": 12,
+  "models": [
+    {
+      "model-name": "Eire Lieutenant",
+      "model-id": "md_lieutenant_eire",
+      "name": "named lieu",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+2",
+      "stat-ranged": "+3",
+      "stat-armour": "-1",
+      "cost": {"ducats": 154, "glory": 3},
+      "equipment": [
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []},
+        {"equipment-name": "Polearm", "equipment-id": "eq_trenchpolearm", "equipment-type": "melee weapon", "equipment-abilities": []},
+        {"equipment-name": "Armour-Piercing Bullets", "equipment-id": "eq_armourpiercingbullets", "equipment-type": "equipment", "equipment-abilities": []},
+        {"equipment-name": "Submachine Gun", "equipment-id": "eq_submachinegun", "equipment-type": "ranged weapon", "equipment-abilities": [{"ability-name": "Quick Bursts", "ability-id": "ab_quickbursts"}]},
+        {"equipment-name": "Binoculars", "equipment-id": "eq_binoculars", "equipment-type": "equipment", "equipment-abilities": [{"ability-name": "Survey the Land", "ability-id": "ab_binoculars"}]},
+        {"equipment-name": "Frag Grenades", "equipment-id": "eq_grenades", "equipment-type": "grenade", "equipment-abilities": []},
+        {"equipment-name": "Rocket-Propelled Grenade", "equipment-id": "eq_rocketpropelledgrenade", "equipment-type": "special", "equipment-abilities": [{"ability-name": "Disposable Rocket", "ability-id": "ab_disposablerocket"}]},
+        {"equipment-name": "Trench Dog Ownership", "equipment-id": "eq_trenchdog", "equipment-type": "special", "equipment-abilities": [{"ability-name": "The Dogs of War", "ability-id": "ab_thedogsofwar"}]}
+      ],
+      "abilities": [{"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}],
+      "upgrades": [{"upgrade-name": "Berserker", "upgrade-id": "up_berserker"}],
+      "advancements": [
+        {"advancement-name": "Sprinter", "advancement-id": "sk_sprinter"},
+        {"advancement-name": "Ranged Proficiency", "advancement-id": "sk_rangedproficiency"},
+        {"advancement-name": "Surgical Strike", "advancement-id": "sk_surgicalstrike"}
+      ],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEGATE FEAR", "keyword-id": "kw_negate_kw_fear"},
+        {"keyword-name": "TOUGH", "keyword-id": "kw_tough"},
+        {"keyword-name": "SKIRMISHER", "keyword-id": "kw_skirmisher"},
+        {"keyword-name": "LEADER", "keyword-id": "kw_leader"},
+        {"keyword-name": "ELITE", "keyword-id": "kw_elite"},
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"}
+      ]
+    },
+    {
+      "model-name": "Eire Warrior Priest",
+      "model-id": "md_trenchcleric_erie",
+      "name": "something",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+1",
+      "stat-armour": "-2",
+      "cost": {"ducats": 122, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Submachine Gun", "equipment-id": "eq_submachinegun", "equipment-type": "ranged weapon", "equipment-abilities": [{"ability-name": "Quick Bursts", "ability-id": "ab_quickbursts"}]},
+        {"equipment-name": "Standard Armour", "equipment-id": "eq_standardarmour", "equipment-type": "armour", "equipment-abilities": []},
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []},
+        {"equipment-name": "Polearm", "equipment-id": "eq_trenchpolearm", "equipment-type": "melee weapon", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "God is With Us!", "ability-id": "ab_godiswithus"},
+        {"ability-name": "Away Serpents!", "ability-id": "ab_awayserpents"},
+        {"ability-name": "Arise and be Healed!", "ability-id": "ab_ariseandbehealed"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [],
+      "advancements": [
+        {"advancement-name": "War Stories", "advancement-id": "sk_warstories"},
+        {"advancement-name": "Disengage", "advancement-id": "sk_disengage"}
+      ],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEGATE FEAR", "keyword-id": "kw_negate_kw_fear"},
+        {"keyword-name": "ELITE", "keyword-id": "kw_elite"},
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"}
+      ]
+    },
+    {
+      "model-name": "Eire Warrior Priest",
+      "model-id": "md_trenchcleric_erie",
+      "name": "Ismael",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+1",
+      "stat-armour": "-2",
+      "cost": {"ducats": 112, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Standard Armour", "equipment-id": "eq_standardarmour", "equipment-type": "armour", "equipment-abilities": []},
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []},
+        {"equipment-name": "Automatic Pistol", "equipment-id": "eq_automaticpistol", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Polearm", "equipment-id": "eq_trenchpolearm", "equipment-type": "melee weapon", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "God is With Us!", "ability-id": "ab_godiswithus"},
+        {"ability-name": "Away Serpents!", "ability-id": "ab_awayserpents"},
+        {"ability-name": "Arise and be Healed!", "ability-id": "ab_ariseandbehealed"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [],
+      "advancements": [
+        {"advancement-name": "Surgical Strike", "advancement-id": "sk_surgicalstrike"},
+        {"advancement-name": "Parry", "advancement-id": "sk_parry"}
+      ],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEGATE FEAR", "keyword-id": "kw_negate_kw_fear"},
+        {"keyword-name": "ELITE", "keyword-id": "kw_elite"},
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"}
+      ]
+    },
+    {
+      "model-name": "Yeoman",
+      "model-id": "md_yeoman",
+      "name": "Yeoman",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {"ducats": 52, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Carnyx", "equipment-id": "eq_carnyx", "equipment-type": "equipment", "equipment-abilities": [{"ability-name": "Fanfare", "ability-id": "ab_fanfare"}]},
+        {"equipment-name": "Frag Grenades", "equipment-id": "eq_grenades", "equipment-type": "grenade", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Trench Mole", "ability-id": "ab_trenchmole"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"},
+        {"keyword-name": "FEAR", "keyword-id": "kw_fear"}
+      ]
+    },
+    {
+      "model-name": "Yeoman",
+      "model-id": "md_yeoman",
+      "name": "Yeoman",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {"ducats": 73, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Flamethrower", "equipment-id": "eq_flamethrower", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Club", "equipment-id": "eq_trenchclub", "equipment-type": "melee weapon", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Trench Mole", "ability-id": "ab_trenchmole"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [{"upgrade-name": "Infiltrator", "upgrade-id": "up_infiltrator"}],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"},
+        {"keyword-name": "INFILTRATOR", "keyword-id": "kw_infiltrator"}
+      ]
+    },
+    {
+      "model-name": "Yeoman",
+      "model-id": "md_yeoman",
+      "name": "Yeoman",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {"ducats": 73, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Flamethrower", "equipment-id": "eq_flamethrower", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Club", "equipment-id": "eq_trenchclub", "equipment-type": "melee weapon", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Trench Mole", "ability-id": "ab_trenchmole"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [{"upgrade-name": "Infiltrator", "upgrade-id": "up_infiltrator"}],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"},
+        {"keyword-name": "INFILTRATOR", "keyword-id": "kw_infiltrator"}
+      ]
+    },
+    {
+      "model-name": "Yeoman",
+      "model-id": "md_yeoman",
+      "name": "Yeoman",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "0",
+      "stat-armour": "-1",
+      "cost": {"ducats": 67, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Automatic Shotgun", "equipment-id": "eq_automaticshotgun", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Bayonet", "equipment-id": "eq_bayonet", "equipment-type": "melee weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Trench Mole", "ability-id": "ab_trenchmole"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [{"upgrade-name": "Infiltrator", "upgrade-id": "up_infiltrator"}],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"},
+        {"keyword-name": "INFILTRATOR", "keyword-id": "kw_infiltrator"}
+      ]
+    },
+    {
+      "model-name": "Yeoman",
+      "model-id": "md_yeoman",
+      "name": "Yeoman",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "0",
+      "stat-armour": "-1",
+      "cost": {"ducats": 57, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Automatic Shotgun", "equipment-id": "eq_automaticshotgun", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Bayonet", "equipment-id": "eq_bayonet", "equipment-type": "melee weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Trench Mole", "ability-id": "ab_trenchmole"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"}
+      ]
+    },
+    {
+      "model-name": "Combat Engineer",
+      "model-id": "md_combatengineer",
+      "name": "Combat Engineer",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "+1",
+      "stat-armour": "-3",
+      "cost": {"ducats": 115, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Engineer Body Armour", "equipment-id": "eq_engineerbodyarmour", "equipment-type": "armour", "equipment-abilities": [{"ability-name": "Ballistic Box Armour", "ability-id": "ab_ballisticboxarmour"}]},
+        {"equipment-name": "Shovel", "equipment-id": "eq_shovel", "equipment-type": "equipment", "equipment-abilities": [{"ability-name": "Dug In", "ability-id": "ab_shovel"}]},
+        {"equipment-name": "Satchel Charge", "equipment-id": "eq_satchelcharge", "equipment-type": "grenade", "equipment-abilities": [{"ability-name": "Heavy Explosive", "ability-id": "ab_heavyexplosive"}]},
+        {"equipment-name": "Shotgun", "equipment-id": "eq_shotgun", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Battlefield Demolition", "ability-id": "ab_battlefielddemolition"},
+        {"ability-name": "Fortify", "ability-id": "ab_fortifyeng"},
+        {"ability-name": "Defuse Mine", "ability-id": "ab_demineengineer"},
+        {"ability-name": "Set Mine", "ability-id": "ab_setmineengineer"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEGATE MINED", "keyword-id": "kw_negate_kw_mined"},
+        {"keyword-name": "NEGATE SHRAPNEL", "keyword-id": "kw_negate_kw_shrapnel"},
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"}
+      ]
+    },
+    {
+      "model-name": "Combat Engineer",
+      "model-id": "md_combatengineer",
+      "name": "Combat Engineer",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "+1",
+      "stat-armour": "-3",
+      "cost": {"ducats": 115, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Engineer Body Armour", "equipment-id": "eq_engineerbodyarmour", "equipment-type": "armour", "equipment-abilities": [{"ability-name": "Ballistic Box Armour", "ability-id": "ab_ballisticboxarmour"}]},
+        {"equipment-name": "Shovel", "equipment-id": "eq_shovel", "equipment-type": "equipment", "equipment-abilities": [{"ability-name": "Dug In", "ability-id": "ab_shovel"}]},
+        {"equipment-name": "Satchel Charge", "equipment-id": "eq_satchelcharge", "equipment-type": "grenade", "equipment-abilities": [{"ability-name": "Heavy Explosive", "ability-id": "ab_heavyexplosive"}]},
+        {"equipment-name": "Shotgun", "equipment-id": "eq_shotgun", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Shield", "equipment-id": "eq_trenchshield", "equipment-type": "shield", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Battlefield Demolition", "ability-id": "ab_battlefielddemolition"},
+        {"ability-name": "Fortify", "ability-id": "ab_fortifyeng"},
+        {"ability-name": "Defuse Mine", "ability-id": "ab_demineengineer"},
+        {"ability-name": "Set Mine", "ability-id": "ab_setmineengineer"},
+        {"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEGATE MINED", "keyword-id": "kw_negate_kw_mined"},
+        {"keyword-name": "NEGATE SHRAPNEL", "keyword-id": "kw_negate_kw_shrapnel"},
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"}
+      ]
+    },
+    {
+      "model-name": "Mechanized Heavy Infantry",
+      "model-id": "md_mechanisedheavyinfantry",
+      "name": "Mechanized Heavy Infantry",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "+1",
+      "stat-armour": "-2",
+      "cost": {"ducats": 140, "glory": 0},
+      "equipment": [
+        {"equipment-name": "Reinforced Armour", "equipment-id": "eq_reinforcedarmour", "equipment-type": "armour", "equipment-abilities": []},
+        {"equipment-name": "Machine Gun", "equipment-id": "eq_machinegun", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Armour-Piercing Bullets", "equipment-id": "eq_armourpiercingbullets", "equipment-type": "equipment", "equipment-abilities": []}
+      ],
+      "abilities": [{"ability-name": "Hit-and-Run Tactics", "ability-id": "rl_hitandruntactics"}],
+      "upgrades": [],
+      "advancements": [{"advancement-name": "Far Shot", "advancement-id": "sk_farshot"}],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "NEW ANTIOCH", "keyword-id": "kw_antioch"},
+        {"keyword-name": "STRONG", "keyword-id": "kw_strong"},
+        {"keyword-name": "ELITE", "keyword-id": "kw_elite"},
+        {"keyword-name": "NEGATE HEAVY", "keyword-id": "kw_negate_kw_heavy"}
+      ]
+    },
+    {
+      "model-name": "Communicant Anti-Tank Hunter",
+      "model-id": "md_communicantantitankhunter",
+      "name": "Communicant Anti-Tank Hunter",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+1",
+      "stat-armour": "-1",
+      "cost": {"ducats": 0, "glory": 5},
+      "equipment": [
+        {"equipment-name": "Trench Club", "equipment-id": "eq_trenchclub", "equipment-type": "melee weapon", "equipment-abilities": []},
+        {"equipment-name": "Trench Club", "equipment-id": "eq_trenchclub", "equipment-type": "melee weapon", "equipment-abilities": []},
+        {"equipment-name": "Combat Helmet", "equipment-id": "eq_combathelmet", "equipment-type": "equipment", "equipment-abilities": []},
+        {"equipment-name": "Anti-Materiel Rifle", "equipment-id": "eq_antimaterialrifle", "equipment-type": "ranged weapon", "equipment-abilities": []}
+      ],
+      "abilities": [{"ability-name": "Iron Fists", "ability-id": "ab_ironfists"}],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "REGENERATE 1", "keyword-id": "kw_regenerate_1"},
+        {"keyword-name": "NEGATE SHRAPNEL", "keyword-id": "kw_negate_kw_shrapnel"},
+        {"keyword-name": "TOUGH", "keyword-id": "kw_tough"},
+        {"keyword-name": "STRONG", "keyword-id": "kw_strong"},
+        {"keyword-name": "MERCENARY", "keyword-id": "kw_mercenary"},
+        {"keyword-name": "NEGATE HEAVY", "keyword-id": "kw_negate_kw_heavy"}
+      ]
+    },
+    {
+      "model-name": "Trench Dog",
+      "model-id": "md_trenchdog",
+      "name": "Trench Dog",
+      "stat-move": "8\"/Infantry",
+      "stat-melee": "0",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {"ducats": 0, "glory": 1},
+      "equipment": [
+        {"equipment-name": "Unarmed", "equipment-id": "eq_unarmed_nopenalty", "equipment-type": "melee weapon", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Four Paws", "ability-id": "ab_fourpaws"},
+        {"ability-name": "Pack Loyalty", "ability-id": "ab_packloyalty"},
+        {"ability-name": "Teeth and Claws", "ability-id": "ab_teethandclaws"}
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": []
+    },
+    {
+      "model-name": "Mamluk Faris",
+      "model-id": "md_mamlukfaris",
+      "name": "Mamluk Faris",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+1",
+      "stat-armour": "-2",
+      "cost": {"ducats": 0, "glory": 4},
+      "equipment": [
+        {"equipment-name": "Jezzail", "equipment-id": "eq_jezzail", "equipment-type": "ranged weapon", "equipment-abilities": []},
+        {"equipment-name": "Alchemical Ammunition", "equipment-id": "eq_alchemicalammunition", "equipment-type": "equipment", "equipment-abilities": [{"ability-name": "Guiding Path", "ability-id": "ab_guidingpath"}]},
+        {"equipment-name": "Reinforced Armour", "equipment-id": "eq_reinforcedarmour", "equipment-type": "armour", "equipment-abilities": []},
+        {"equipment-name": "Combat Helmet", "equipment-id": "eq_combathelmet", "equipment-type": "equipment", "equipment-abilities": []}
+      ],
+      "abilities": [
+        {"ability-name": "Sworn Bretheren", "ability-id": "ab_swornbretheren"},
+        {"ability-name": "Martial Prowess", "ability-id": "ab_martialprowess"},
+        {"ability-name": "Automaton Destrier", "ability-id": "ab_automatondestrier"}
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {"keyword-name": "IGNORE OFF-HAND WEAPON", "keyword-id": "kw_ignoremodifieroff-hand_weapon"},
+        {"keyword-name": "NEGATE SHRAPNEL", "keyword-id": "kw_negate_kw_shrapnel"},
+        {"keyword-name": "MERCENARY", "keyword-id": "kw_mercenary"}
+      ]
+    }
+  ]
+}

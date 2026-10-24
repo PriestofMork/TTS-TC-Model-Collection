@@ -1,5 +1,5 @@
 {
- "version": 7,
+ "version": 8,
  "factions": [
   {
    "id": "new-antioch",
@@ -79,7 +79,10 @@
       "papal-states-intervention-force": 2,
       "stosstruppen-of-the-free-state-of-prussia": 2
      },
-     "file": "units/new-antioch/mechanized-heavy-infantry.json"
+     "file": "units/new-antioch/mechanized-heavy-infantry.json",
+     "companion": [
+      "mechanisedheavyinfantry"
+     ]
     },
     {
      "id": "shocktrooper",
@@ -180,7 +183,10 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/sister-of-saint-cosmas.json"
+     "file": "units/mercenaries/sister-of-saint-cosmas.json",
+     "companion": [
+      "md_combatmedic_mv_pilgrim"
+     ]
     },
     {
      "id": "witchburner",
@@ -196,7 +202,10 @@
      "count": 9,
      "any": 9,
      "subs": {},
-     "file": "units/mercenaries/golem.json"
+     "file": "units/mercenaries/golem.json",
+     "companion": [
+      "md_takwincreation_golem"
+     ]
     }
    ]
   }

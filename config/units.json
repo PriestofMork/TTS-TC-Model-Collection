@@ -17,7 +17,7 @@
         {"id": "trench-cleric", "name": "Trench Cleric"},
         {"id": "combat-engineer", "name": "Combat Engineer"},
         {"id": "combat-medic", "name": "Combat Medic"},
-        {"id": "mechanized-heavy-infantry", "name": "Mechanized Heavy Infantry"},
+        {"id": "mechanized-heavy-infantry", "name": "Mechanized Heavy Infantry", "companion": ["mechanisedheavyinfantry"]},
         {"id": "shocktrooper", "name": "Shocktrooper"},
         {"id": "yeoman", "name": "Yeoman"},
         {"id": "crimson-communicant", "name": "Crimson Communicant"},
@@ -52,15 +52,15 @@
         {"id": "defenders-of-the-iron-wall", "name": "Defenders of the Iron Wall"}
       ],
       "units": [
-        {"id": "yuzbasi-captain", "name": "Yüzbaşı Captain"},
+        {"id": "yuzbasi-captain", "name": "Yüzbaşı Captain", "companion": ["yuzbasicaptain"]},
         {"id": "jabirean-alchemist", "name": "Jabirean Alchemist"},
         {"id": "sultanate-assassin", "name": "Sultanate Assassin"},
         {"id": "azeb", "name": "Azeb"},
         {"id": "brazen-bull", "name": "Brazen Bull"},
-        {"id": "janissary", "name": "Janissary"},
+        {"id": "janissary", "name": "Janissary", "companion": ["janissaries"]},
         {"id": "lion-of-jabir", "name": "Lion of Jabir"},
         {"id": "sultanate-sapper", "name": "Sultanate Sapper"},
-        {"id": "takwin-homunculus", "name": "Takwin Homunculus"},
+        {"id": "takwin-homunculus", "name": "Takwin Homunculus", "companion": ["takwincreation"]},
         {"id": "sipahi-automaton-cavalry", "name": "Sipahi Automaton Cavalry"},
         {"id": "misc", "name": "Misc"}
       ]
@@ -75,9 +75,9 @@
       ],
       "units": [
         {"id": "heretic-priest", "name": "Heretic Priest"},
-        {"id": "death-commando", "name": "Death Commando"},
-        {"id": "heretic-chorister", "name": "Heretic Chorister"},
-        {"id": "anointed-heavy-infantry", "name": "Anointed Heavy Infantry"},
+        {"id": "death-commando", "name": "Death Commando", "companion": ["hereticdeathcommando"]},
+        {"id": "heretic-chorister", "name": "Heretic Chorister", "companion": ["heretichorister", "hereticchorister"]},
+        {"id": "anointed-heavy-infantry", "name": "Anointed Heavy Infantry", "companion": ["annointedheavyinfantry"]},
         {"id": "artillery-witch", "name": "Artillery Witch"},
         {"id": "heretic-trooper", "name": "Heretic Trooper"},
         {"id": "war-wolf-assault-beast", "name": "War Wolf Assault Beast"},
@@ -102,7 +102,7 @@
         {"id": "herald-of-beelzebub", "name": "Herald of Beelzebub"},
         {"id": "hounds-of-the-black-grail", "name": "Hounds of the Black Grail"},
         {"id": "matagot-hag", "name": "Matagot Hag"},
-        {"id": "gregori-gula", "name": "Gregori Gula"},
+        {"id": "gregori-gula", "name": "Gregori Gula", "companion": ["gergorigula"]},
         {"id": "misc", "name": "Misc"}
       ]
     },
@@ -125,7 +125,7 @@
         {"id": "hunter-of-the-left-hand-path", "name": "Hunter of the Left-Hand Path"},
         {"id": "desecrated-saint", "name": "Desecrated Saint"},
         {"id": "pit-locust", "name": "Pit Locust"},
-        {"id": "wretched", "name": "Wretched"},
+        {"id": "wretched", "name": "Wretched", "companion": ["md_wretched_court"]},
         {"id": "yoke-fiend", "name": "Yoke Fiend"},
         {"id": "misc", "name": "Misc"}
       ]
@@ -143,10 +143,10 @@
         {"id": "observer", "name": "Observer"},
         {"id": "scripture-guardian", "name": "Scripture Guardian"},
         {"id": "sin-eater", "name": "Sin Eater"},
-        {"id": "sister-of-saint-cosmas", "name": "Sister of Saint Cosmas"},
+        {"id": "sister-of-saint-cosmas", "name": "Sister of Saint Cosmas", "companion": ["md_combatmedic_mv_pilgrim"]},
         {"id": "witchburner", "name": "Witchburner"},
-        {"id": "golem", "name": "Golem"},
-        {"id": "dogs", "name": "Dogs"},
+        {"id": "golem", "name": "Golem", "companion": ["md_takwincreation_golem"]},
+        {"id": "dogs", "name": "Dogs", "companion": ["trenchdog"]},
         {"id": "misc", "name": "Misc"}
       ]
     }
