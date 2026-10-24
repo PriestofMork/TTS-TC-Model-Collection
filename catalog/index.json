@@ -1,11 +1,123 @@
 {
- "version": 3,
+ "version": 4,
  "factions": [
+  {
+   "id": "new-antioch",
+   "name": "New Antioch",
+   "subfactions": [
+    {
+     "id": "papal-states-intervention-force",
+     "name": "Papal States Intervention Force"
+    },
+    {
+     "id": "eire-rangers",
+     "name": "Eire Rangers"
+    },
+    {
+     "id": "stosstruppen-of-the-free-state-of-prussia",
+     "name": "Stoßtruppen of the Free State of Prussia"
+    },
+    {
+     "id": "kingdom-of-alba-assault-detatchment",
+     "name": "Kingdom of Alba Assault Detatchment"
+    },
+    {
+     "id": "expeditionary-forces-of-abyssinia",
+     "name": "Expeditionary Forces of Abyssinia"
+    },
+    {
+     "id": "the-red-brigade",
+     "name": "The Red Brigade"
+    }
+   ],
+   "units": [
+    {
+     "id": "lieutenant",
+     "name": "Lieutenant",
+     "count": 16,
+     "any": 12,
+     "subs": {
+      "papal-states-intervention-force": 1,
+      "stosstruppen-of-the-free-state-of-prussia": 2,
+      "the-red-brigade": 1
+     },
+     "file": "units/new-antioch/lieutenant.json"
+    },
+    {
+     "id": "sniper-priest",
+     "name": "Sniper Priest",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/new-antioch/sniper-priest.json"
+    },
+    {
+     "id": "trench-cleric",
+     "name": "Trench Cleric",
+     "count": 7,
+     "any": 5,
+     "subs": {
+      "papal-states-intervention-force": 1,
+      "stosstruppen-of-the-free-state-of-prussia": 1
+     },
+     "file": "units/new-antioch/trench-cleric.json"
+    },
+    {
+     "id": "combat-engineer",
+     "name": "Combat Engineer",
+     "count": 3,
+     "any": 3,
+     "subs": {},
+     "file": "units/new-antioch/combat-engineer.json"
+    },
+    {
+     "id": "mechanized-heavy-infantry",
+     "name": "Mechanized Heavy Infantry",
+     "count": 13,
+     "any": 9,
+     "subs": {
+      "papal-states-intervention-force": 2,
+      "stosstruppen-of-the-free-state-of-prussia": 2
+     },
+     "file": "units/new-antioch/mechanized-heavy-infantry.json"
+    },
+    {
+     "id": "shocktrooper",
+     "name": "Shocktrooper",
+     "count": 11,
+     "any": 5,
+     "subs": {
+      "kingdom-of-alba-assault-detatchment": 3,
+      "papal-states-intervention-force": 2,
+      "stosstruppen-of-the-free-state-of-prussia": 1
+     },
+     "file": "units/new-antioch/shocktrooper.json"
+    },
+    {
+     "id": "yeoman",
+     "name": "Yeoman",
+     "count": 15,
+     "any": 14,
+     "subs": {
+      "papal-states-intervention-force": 1
+     },
+     "file": "units/new-antioch/yeoman.json"
+    }
+   ]
+  },
   {
    "id": "mercenaries",
    "name": "Mercenaries",
    "subfactions": [],
    "units": [
+    {
+     "id": "combat-biologist",
+     "name": "Combat Biologist",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/mercenaries/combat-biologist.json"
+    },
     {
      "id": "communicant-anti-tank-hunter",
      "name": "Communicant Anti-Tank Hunter",
@@ -13,6 +125,78 @@
      "any": 8,
      "subs": {},
      "file": "units/mercenaries/communicant-anti-tank-hunter.json"
+    },
+    {
+     "id": "goetic-warlock",
+     "name": "Goetic Warlock",
+     "count": 5,
+     "any": 5,
+     "subs": {},
+     "file": "units/mercenaries/goetic-warlock.json"
+    },
+    {
+     "id": "mamluk-faris",
+     "name": "Mamluk Faris",
+     "count": 5,
+     "any": 5,
+     "subs": {},
+     "file": "units/mercenaries/mamluk-faris.json"
+    },
+    {
+     "id": "mendelist-ammo-monk",
+     "name": "Mendelist Ammo Monk",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/mercenaries/mendelist-ammo-monk.json"
+    },
+    {
+     "id": "observer",
+     "name": "Observer",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/mercenaries/observer.json"
+    },
+    {
+     "id": "scripture-guardian",
+     "name": "Scripture Guardian",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/mercenaries/scripture-guardian.json"
+    },
+    {
+     "id": "sin-eater",
+     "name": "Sin Eater",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/mercenaries/sin-eater.json"
+    },
+    {
+     "id": "sister-of-saint-cosmas",
+     "name": "Sister of Saint Cosmas",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/mercenaries/sister-of-saint-cosmas.json"
+    },
+    {
+     "id": "witchburner",
+     "name": "Witchburner",
+     "count": 3,
+     "any": 3,
+     "subs": {},
+     "file": "units/mercenaries/witchburner.json"
+    },
+    {
+     "id": "golem",
+     "name": "Golem",
+     "count": 9,
+     "any": 9,
+     "subs": {},
+     "file": "units/mercenaries/golem.json"
     }
    ]
   }

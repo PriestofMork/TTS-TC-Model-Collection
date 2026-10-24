@@ -20,19 +20,7 @@
         {"id": "mechanized-heavy-infantry", "name": "Mechanized Heavy Infantry"},
         {"id": "shocktrooper", "name": "Shocktrooper"},
         {"id": "yeoman", "name": "Yeoman"},
-        {"id": "lector", "name": "Lector"},
-        {"id": "eire-lieutenant", "name": "Eire Lieutenant"},
-        {"id": "eire-warrior-priest", "name": "Eire Warrior Priest"},
-        {"id": "highland-lieutenant", "name": "Highland Lieutenant"},
-        {"id": "highland-mechanized-infantry", "name": "Highland Mechanized Infantry"},
-        {"id": "highland-shocktrooper", "name": "Highland Shocktrooper"},
-        {"id": "holy-warrior", "name": "Holy Warrior"},
-        {"id": "abyssinian-mechanized-infantry", "name": "Abyssinian Mechanized Infantry"},
         {"id": "crimson-communicant", "name": "Crimson Communicant"},
-        {"id": "attack-dog", "name": "Attack Dog"},
-        {"id": "guard-dog", "name": "Guard Dog"},
-        {"id": "mercy-dog", "name": "Mercy Dog"},
-        {"id": "trench-dog", "name": "Trench Dog"},
         {"id": "misc", "name": "Misc"}
       ]
     },
@@ -52,12 +40,6 @@
         {"id": "ecclesiastic-prisoner", "name": "Ecclesiastic Prisoner"},
         {"id": "stigmatic-nun", "name": "Stigmatic Nun"},
         {"id": "trench-pilgrim", "name": "Trench Pilgrim"},
-        {"id": "lazarist-prophet", "name": "Lazarist Prophet"},
-        {"id": "lazarist-castigator", "name": "Lazarist Castigator"},
-        {"id": "lazarist-communicant", "name": "Lazarist Communicant"},
-        {"id": "lazarist-communicant-of-the-flock", "name": "Lazarist Communicant of the Flock"},
-        {"id": "leper-knight", "name": "Leper Knight"},
-        {"id": "leper-pilgrims", "name": "Leper-Pilgrims"},
         {"id": "misc", "name": "Misc"}
       ]
     },
@@ -78,13 +60,7 @@
         {"id": "janissary", "name": "Janissary"},
         {"id": "lion-of-jabir", "name": "Lion of Jabir"},
         {"id": "sultanate-sapper", "name": "Sultanate Sapper"},
-        {"id": "master-assassin", "name": "Master Assassin"},
-        {"id": "assassin-acolyte", "name": "Assassin Acolyte"},
-        {"id": "dervish", "name": "Dervish"},
-        {"id": "faris", "name": "Fāris"},
         {"id": "takwin-homunculus", "name": "Takwin Homunculus"},
-        {"id": "silahdar", "name": "Silahdar"},
-        {"id": "janissary-officer", "name": "Janissary Officer"},
         {"id": "sipahi-automaton-cavalry", "name": "Sipahi Automaton Cavalry"},
         {"id": "misc", "name": "Misc"}
       ]
@@ -107,17 +83,6 @@
         {"id": "war-wolf-assault-beast", "name": "War Wolf Assault Beast"},
         {"id": "wretched", "name": "Wretched"},
         {"id": "barbed-wire-banshee", "name": "Barbed Wire Banshee"},
-        {"id": "heretic-priest-of-mammon", "name": "Heretic Priest of Mammon"},
-        {"id": "artillery-witches-of-mammon", "name": "Artillery Witches of Mammon"},
-        {"id": "heretic-captain", "name": "Heretic Captain"},
-        {"id": "abyssal-commando", "name": "Abyssal Commando"},
-        {"id": "drowned-chorister", "name": "Drowned Chorister"},
-        {"id": "anointed-heretic-raiders", "name": "Anointed Heretic Raiders"},
-        {"id": "sea-hag", "name": "Sea Hag"},
-        {"id": "heretic-raider", "name": "Heretic Raider"},
-        {"id": "raiders-wretched", "name": "Raider's Wretched"},
-        {"id": "leviathal-chorus-chorister", "name": "Leviathal Chorus Chorister"},
-        {"id": "choir-wretched", "name": "Choir Wretched"},
         {"id": "misc", "name": "Misc"}
       ]
     },
@@ -137,16 +102,8 @@
         {"id": "fly-thrall", "name": "Fly Thrall"},
         {"id": "herald-of-beelzebub", "name": "Herald of Beelzebub"},
         {"id": "hounds-of-the-black-grail", "name": "Hounds of the Black Grail"},
-        {"id": "executor", "name": "Executor"},
-        {"id": "bereaved", "name": "Bereaved"},
-        {"id": "fly-bereaved", "name": "Fly Bereaved"},
         {"id": "matagot-hag", "name": "Matagot Hag"},
-        {"id": "dessicated-husk", "name": "Dessicated Husk"},
-        {"id": "great-maw", "name": "Great Maw"},
-        {"id": "butcher-knight", "name": "Butcher Knight"},
         {"id": "gregori-gula", "name": "Gregori Gula"},
-        {"id": "ravenous", "name": "Ravenous"},
-        {"id": "cradle-ravenous", "name": "Cradle Ravenous"},
         {"id": "misc", "name": "Misc"}
       ]
     },
@@ -190,6 +147,7 @@
         {"id": "sister-of-saint-cosmas", "name": "Sister of Saint Cosmas"},
         {"id": "witchburner", "name": "Witchburner"},
         {"id": "golem", "name": "Golem"},
+        {"id": "dogs", "name": "Dogs"},
         {"id": "misc", "name": "Misc"}
       ]
     }

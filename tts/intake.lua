@@ -41,7 +41,6 @@ local UI_SCALE  = 1
 local COLOR_NEW   = {0.2, 1, 0.2}
 local COLOR_RETAG = {1, 0.8, 0.1}
 local COLOR_BAD   = {1, 0.2, 0.2}
-local UNIT_PLACEHOLDER = "-- choose unit --"
 -- ==================================================
 
 local config       = nil        -- decoded units.json
@@ -154,63 +153,72 @@ local function setStatus(text)
     render()
 end
 
+-- The panel's height is the sum of its rows, so it grows with the unit list.
 local function buildXml()
-    local x = {}
+    local x, height = {}, 24   -- 24 = top + bottom padding
     local function add(s) x[#x + 1] = s end
+    local function row(h, s)
+        height = height + h + 6   -- 6 = layout spacing
+        add(s)
+    end
 
-    add('<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/>'
-        .. '<Toggle fontSize="16" textColor="#FFFFFF"/><Dropdown fontSize="18"/></Defaults>')
-    add('<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="520" height="720" scale="'
-        .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">')
-    add('<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">')
-    add('<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Intake</Text>')
+    row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Intake</Text>')
 
     if config then
         local fe = factionIndex[sel.f]
 
-        add('<Text preferredHeight="24" alignment="MiddleLeft">Faction</Text>')
-        add('<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">')
+        local opts = {}
         for _, f in ipairs(config.factions) do
-            add('<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>')
+            opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
         end
-        add('</Dropdown>')
+        row(40, '<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">' .. table.concat(opts) .. '</Dropdown>')
 
-        add('<Text preferredHeight="24" alignment="MiddleLeft">Unit</Text>')
-        add('<Dropdown id="unit" preferredHeight="40" onValueChanged="ui_unit">')
-        add('<Option' .. (sel.u == nil and ' selected="true"' or '') .. '>' .. UNIT_PLACEHOLDER .. '</Option>')
-        for _, u in ipairs(fe.faction.units) do
-            add('<Option' .. (u.id == sel.u and ' selected="true"' or '') .. '>' .. xmlEscape(u.name) .. '</Option>')
+        -- Units as buttons (three per row): switching unit is the most frequent action, and a
+        -- dropdown needs scrolling for long lists. The selected unit is green.
+        row(24, '<Text preferredHeight="24" alignment="MiddleLeft">Unit</Text>')
+        local units = fe.faction.units
+        local unitRows = math.ceil(#units / 3)
+        local b = {}
+        for _, u in ipairs(units) do
+            b[#b + 1] = '<Button id="u:' .. xmlEscape(u.id) .. '" onClick="ui_unit" fontSize="14"'
+                .. (u.id == sel.u and ' colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF"' or '')
+                .. '>' .. xmlEscape(u.name) .. '</Button>'
         end
-        add('</Dropdown>')
+        row(unitRows * 38, '<GridLayout cellSize="160 34" spacing="4 4" preferredHeight="' .. (unitRows * 38) .. '">'
+            .. table.concat(b) .. '</GridLayout>')
 
-        add('<Text preferredHeight="24" alignment="MiddleLeft">Subfactions (none = any)</Text>')
+        row(24, '<Text preferredHeight="24" alignment="MiddleLeft">Subfactions (none = any)</Text>')
         local subs = fe.faction.subfactions or {}
         if #subs == 0 then
-            add('<Text preferredHeight="26" alignment="MiddleLeft" color="#AAAAAA">This faction has no subfactions.</Text>')
+            row(26, '<Text preferredHeight="26" alignment="MiddleLeft" color="#AAAAAA">This faction has no subfactions.</Text>')
         else
-            add('<GridLayout cellSize="240 30" spacing="4 4" preferredHeight="' .. (math.ceil(#subs / 2) * 34) .. '">')
-            for _, s in ipairs(subs) do
-                add('<Toggle id="sub:' .. xmlEscape(s.id) .. '" isOn="' .. (sel.s[s.id] and 'true' or 'false')
-                    .. '" onValueChanged="ui_sub">' .. xmlEscape(s.name) .. '</Toggle>')
+            local t, subRows = {}, math.ceil(#subs / 2)
+            for _, sf in ipairs(subs) do
+                t[#t + 1] = '<Toggle id="sub:' .. xmlEscape(sf.id) .. '" isOn="' .. (sel.s[sf.id] and 'true' or 'false')
+                    .. '" onValueChanged="ui_sub">' .. xmlEscape(sf.name) .. '</Toggle>'
             end
-            add('</GridLayout>')
+            row(subRows * 34, '<GridLayout cellSize="240 30" spacing="4 4" preferredHeight="' .. (subRows * 34) .. '">'
+                .. table.concat(t) .. '</GridLayout>')
         end
 
-        add('<HorizontalLayout preferredHeight="44" spacing="6">')
-        add('<Button onClick="ui_preview">Preview</Button>')
-        add('<Button onClick="ui_submit" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Submit</Button>')
-        add('<Button onClick="ui_clear">Clear</Button>')
-        add('</HorizontalLayout>')
+        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
+            .. '<Button onClick="ui_preview">Preview</Button>'
+            .. '<Button onClick="ui_submit" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Submit</Button>'
+            .. '<Button onClick="ui_clear">Clear</Button></HorizontalLayout>')
     end
 
-    add('<HorizontalLayout preferredHeight="36" spacing="6">')
-    if config then add('<Button onClick="ui_unsorted" fontSize="16">Check unsorted</Button>') end
-    add('<Button onClick="ui_reload" fontSize="16">Reload config</Button>')
-    add('</HorizontalLayout>')
+    row(36, '<HorizontalLayout preferredHeight="36" spacing="6">'
+        .. (config and '<Button onClick="ui_unsorted" fontSize="16">Check unsorted</Button>' or '')
+        .. '<Button onClick="ui_reload" fontSize="16">Reload config</Button></HorizontalLayout>')
 
-    add('<Text id="status" preferredHeight="220" fontSize="16" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
-    add('</VerticalLayout></Panel>')
-    return table.concat(x)
+    row(160, '<Text preferredHeight="160" fontSize="16" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
+
+    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/>'
+        .. '<Toggle fontSize="16" textColor="#FFFFFF"/><Dropdown fontSize="18"/></Defaults>'
+        .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="520" height="' .. height
+        .. '" scale="' .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">'
+        .. '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
+        .. table.concat(x) .. '</VerticalLayout></Panel>'
 end
 
 -- Coalesce several render() calls in one frame into a single setXml.
@@ -535,11 +543,10 @@ function ui_faction(player, value)
     end
 end
 
-function ui_unit(player, value)
-    sel.u = nil
-    for _, u in ipairs(factionIndex[sel.f].faction.units) do
-        if u.name == value then sel.u = u.id break end
-    end
+-- Unit buttons have id "u:<unit id>".
+function ui_unit(player, value, id)
+    sel.u = string.sub(id, 3)
+    render()   -- highlight the selected button
     preview(false)
 end
 
