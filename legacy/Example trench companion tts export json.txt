@@ -1,0 +1,820 @@
+{
+  "warband-id": 347481,
+  "warband-url": "https://trench-companion.com/warband/detail/347481",
+  "warband-name": "Wisdom tooth Burglars",
+  "ducat-bank": 79,
+  "glory-bank": 3,
+  "ducat-rating": 1216,
+  "glory-rating": 7,
+  "models": [
+    {
+      "model-name": "Jabirean Alchemist",
+      "model-id": "md_jabireanalchemist",
+      "name": "Jabirean Alchemist",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+2",
+      "stat-armour": "-1",
+      "cost": {
+        "ducats": 85,
+        "glory": 4
+      },
+      "equipment": [
+        {
+          "equipment-name": "Standard Armour",
+          "equipment-id": "eq_standardarmour",
+          "equipment-type": "armour",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Masterworks Jezzail",
+          "equipment-id": "eq_masterworksjezzail",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": [
+            {
+              "ability-name": "Enhanced Bullets",
+              "ability-id": "ab_enhancedbullets"
+            }
+          ]
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Mastery of the Elements",
+          "ability-id": "ab_masteryoftheelements"
+        },
+        {
+          "ability-name": "Elemental Change",
+          "ability-id": "ab_elementalchange"
+        },
+        {
+          "ability-name": "Chosen Homunculus",
+          "ability-id": "ab_chosenhomunculus"
+        }
+      ],
+      "upgrades": [
+        {
+          "upgrade-name": "Medicine",
+          "upgrade-id": "up_secrets_medicine"
+        }
+      ],
+      "advancements": [
+        {
+          "advancement-name": "Sharp Eyes",
+          "advancement-id": "sk_sharpeyes"
+        },
+        {
+          "advancement-name": "Far Shot",
+          "advancement-id": "sk_farshot"
+        }
+      ],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "ELITE",
+          "keyword-id": "kw_elite"
+        }
+      ]
+    },
+    {
+      "model-name": "Jabirean Alchemist",
+      "model-id": "md_jabireanalchemist",
+      "name": "Jabirean Alchemist",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+2",
+      "stat-armour": "-2",
+      "cost": {
+        "ducats": 165,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Machine Gun",
+          "equipment-id": "eq_machinegun",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Reinforced Armour",
+          "equipment-id": "eq_reinforcedarmour",
+          "equipment-type": "armour",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Mastery of the Elements",
+          "ability-id": "ab_masteryoftheelements"
+        },
+        {
+          "ability-name": "Elemental Change",
+          "ability-id": "ab_elementalchange"
+        },
+        {
+          "ability-name": "Chosen Homunculus",
+          "ability-id": "ab_chosenhomunculus"
+        }
+      ],
+      "upgrades": [
+        {
+          "upgrade-name": "Cartography and Geography",
+          "upgrade-id": "up_secrets_cartographyandgeography"
+        }
+      ],
+      "advancements": [
+        {
+          "advancement-name": "Strength of Samson",
+          "advancement-id": "sk_strengthofsamson"
+        },
+        {
+          "advancement-name": "Show Off",
+          "advancement-id": "sk_showoff"
+        }
+      ],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "ELITE",
+          "keyword-id": "kw_elite"
+        },
+        {
+          "keyword-name": "STRONG",
+          "keyword-id": "kw_strong"
+        },
+        {
+          "keyword-name": "NEGATE HEAVY",
+          "keyword-id": "kw_negate_kw_heavy"
+        }
+      ]
+    },
+    {
+      "model-name": "Brazen Bull",
+      "model-id": "md_brazenbull",
+      "name": "Brazen Bull",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+2",
+      "stat-ranged": "0",
+      "stat-armour": "-2",
+      "cost": {
+        "ducats": 250,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Flame Cannon",
+          "equipment-id": "eq_flamecannon",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": [
+            {
+              "ability-name": "Greek Fire",
+              "ability-id": "ab_greekfire"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Great Hammer/Maul",
+          "equipment-id": "eq_doublehandedbluntweapon",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Standard Armour",
+          "equipment-id": "eq_standardarmour",
+          "equipment-type": "armour",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Fire Shield",
+          "equipment-id": "eq_fireshield",
+          "equipment-type": "shield",
+          "equipment-abilities": [
+            {
+              "ability-name": "Flame Repellent",
+              "ability-id": "ab_fireshield"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Wind Amulet",
+          "equipment-id": "eq_windamulet",
+          "equipment-type": "equipment",
+          "equipment-abilities": [
+            {
+              "ability-name": "Gusts of Wind",
+              "ability-id": "ab_gustsofwind"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Martyrdom Pills",
+          "equipment-id": "eq_martyrdompills",
+          "equipment-type": "equipment",
+          "equipment-abilities": [
+            {
+              "ability-name": "Inured to Pain",
+              "ability-id": "ab_inuredtopain"
+            }
+          ]
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Artificial Life",
+          "ability-id": "ab_artificialbody"
+        },
+        {
+          "ability-name": "Trample",
+          "ability-id": "ab_trample"
+        },
+        {
+          "ability-name": "Living Battering Ram",
+          "ability-id": "ab_livingbatteringram"
+        }
+      ],
+      "upgrades": [],
+      "advancements": [
+        {
+          "advancement-name": "Dodge",
+          "advancement-id": "sk_dodge"
+        },
+        {
+          "advancement-name": "Champion",
+          "advancement-id": "sk_champion"
+        }
+      ],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "NEGATE SHRAPNEL",
+          "keyword-id": "kw_negate_kw_shrapnel"
+        },
+        {
+          "keyword-name": "NEGATE FIRE",
+          "keyword-id": "kw_negate_kw_fire"
+        },
+        {
+          "keyword-name": "NEGATE FEAR",
+          "keyword-id": "kw_negate_kw_fear"
+        },
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "STRONG",
+          "keyword-id": "kw_strong"
+        },
+        {
+          "keyword-name": "TOUGH",
+          "keyword-id": "kw_tough"
+        },
+        {
+          "keyword-name": "FEAR",
+          "keyword-id": "kw_fear"
+        },
+        {
+          "keyword-name": "ARTIFICIAL",
+          "keyword-id": "kw_artificial"
+        },
+        {
+          "keyword-name": "ELITE",
+          "keyword-id": "kw_elite"
+        },
+        {
+          "keyword-name": "NEGATE HEAVY",
+          "keyword-id": "kw_negate_kw_heavy"
+        }
+      ]
+    },
+    {
+      "model-name": "Azeb",
+      "model-id": "md_azeb_mv_kavass",
+      "name": "Azeb",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "-1",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {
+        "ducats": 50,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Musical Instrument",
+          "equipment-id": "eq_musicalinstrument",
+          "equipment-type": "equipment",
+          "equipment-abilities": [
+            {
+              "ability-name": "Fanfare",
+              "ability-id": "ab_fanfare"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Gas Grenades",
+          "equipment-id": "eq_gasgrenades",
+          "equipment-type": "grenade",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "INFILTRATOR",
+          "keyword-id": "kw_infiltrator"
+        }
+      ]
+    },
+    {
+      "model-name": "Azeb",
+      "model-id": "md_azeb_mv_kavass",
+      "name": "Azeb",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "-1",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {
+        "ducats": 55,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Flamethrower",
+          "equipment-id": "eq_flamethrower",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "INFILTRATOR",
+          "keyword-id": "kw_infiltrator"
+        }
+      ]
+    },
+    {
+      "model-name": "Azeb",
+      "model-id": "md_azeb_mv_kavass",
+      "name": "Azeb",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "-1",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {
+        "ducats": 55,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Flamethrower",
+          "equipment-id": "eq_flamethrower",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        }
+      ]
+    },
+    {
+      "model-name": "Azeb",
+      "model-id": "md_azeb_mv_kavass",
+      "name": "Azeb",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "-1",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {
+        "ducats": 55,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Flamethrower",
+          "equipment-id": "eq_flamethrower",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        }
+      ]
+    },
+    {
+      "model-name": "Golem",
+      "model-id": "md_takwincreation_golem",
+      "name": "Golem",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "0",
+      "stat-armour": "0",
+      "cost": {
+        "ducats": 96,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Great Hammer/Maul",
+          "equipment-id": "eq_doublehandedbluntweapon",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Trench Club",
+          "equipment-id": "eq_trenchclub",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Trench Club",
+          "equipment-id": "eq_trenchclub",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Re-creation",
+          "ability-id": "ab_recreation"
+        },
+        {
+          "ability-name": "Pummelling Blows",
+          "ability-id": "ab_pummellingblows"
+        },
+        {
+          "ability-name": "Golem's Limit",
+          "ability-id": "ab_limitedupgrades"
+        },
+        {
+          "ability-name": "Artificial Life",
+          "ability-id": "ab_artificialbody"
+        }
+      ],
+      "upgrades": [
+        {
+          "upgrade-name": "Human Hands",
+          "upgrade-id": "up_alchemicalformulae_humanhands"
+        },
+        {
+          "upgrade-name": "Additional Arm",
+          "upgrade-id": "up_alchemicalformulae_additionalarm"
+        },
+        {
+          "upgrade-name": "Inhuman Strength",
+          "upgrade-id": "up_alchemicalformulae_inhumanstrength"
+        },
+        {
+          "upgrade-name": "Startling Speed",
+          "upgrade-id": "up_alchemicalformulae_startlingspeed"
+        }
+      ],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "GOLEM",
+          "keyword-id": "kw_golem"
+        },
+        {
+          "keyword-name": "ARTIFICIAL",
+          "keyword-id": "kw_artificial"
+        },
+        {
+          "keyword-name": "STRONG",
+          "keyword-id": "kw_strong"
+        },
+        {
+          "keyword-name": "NEGATE GAS",
+          "keyword-id": "kw_negate_kw_gas"
+        },
+        {
+          "keyword-name": "NEGATE FEAR",
+          "keyword-id": "kw_negate_kw_fear"
+        },
+        {
+          "keyword-name": "NEGATE HEAVY",
+          "keyword-id": "kw_negate_kw_heavy"
+        }
+      ]
+    },
+    {
+      "model-name": "Takwin Homunculus",
+      "model-id": "md_takwincreation",
+      "name": "Takwin Homunculus",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+1",
+      "stat-armour": "0",
+      "cost": {
+        "ducats": 230,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "M.U.R.A.D Bombard",
+          "equipment-id": "eq_muradbombard",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": [
+            {
+              "ability-name": "Echoing Blast",
+              "ability-id": "ab_echoingblast"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Automatic Rifle",
+          "equipment-id": "eq_automaticrifle",
+          "equipment-type": "ranged weapon",
+          "equipment-abilities": [
+            {
+              "ability-name": "Focused Fire",
+              "ability-id": "ab_focusedfire"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Unarmed",
+          "equipment-id": "eq_unarmed_nopenalty",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Artificial Life",
+          "ability-id": "ab_artificialbody"
+        },
+        {
+          "ability-name": "Re-creation",
+          "ability-id": "ab_recreation"
+        },
+        {
+          "ability-name": "Pummelling Blows",
+          "ability-id": "ab_pummellingblows"
+        }
+      ],
+      "upgrades": [
+        {
+          "upgrade-name": "Inhuman Strength",
+          "upgrade-id": "up_alchemicalformulae_inhumanstrength"
+        },
+        {
+          "upgrade-name": "Massive Size",
+          "upgrade-id": "up_alchemicalformulae_massive_size"
+        },
+        {
+          "upgrade-name": "Human Hands",
+          "upgrade-id": "up_alchemicalformulae_humanhands"
+        },
+        {
+          "upgrade-name": "Gargantuan Size",
+          "upgrade-id": "up_alchemicalformulae_gargantuansize"
+        },
+        {
+          "upgrade-name": "Hawk Eyes",
+          "upgrade-id": "up_alchemicalformulae_hawkeyes"
+        },
+        {
+          "upgrade-name": "Additional Arm",
+          "upgrade-id": "up_alchemicalformulae_additionalarm"
+        }
+      ],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "ARTIFICIAL",
+          "keyword-id": "kw_artificial"
+        },
+        {
+          "keyword-name": "STRONG",
+          "keyword-id": "kw_strong"
+        },
+        {
+          "keyword-name": "TOUGH",
+          "keyword-id": "kw_tough"
+        },
+        {
+          "keyword-name": "NEGATE HEAVY",
+          "keyword-id": "kw_negate_kw_heavy"
+        }
+      ]
+    },
+    {
+      "model-name": "Fāris",
+      "model-id": "md_janissaries_mv_faris",
+      "name": "Fāris",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "+1",
+      "stat-armour": "-3",
+      "cost": {
+        "ducats": 165,
+        "glory": 0
+      },
+      "equipment": [
+        {
+          "equipment-name": "Halberd-Gun",
+          "equipment-id": "eq_halberdgun",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Elixer of Al-Khidr",
+          "equipment-id": "eq_exlixerofalkhidr",
+          "equipment-type": "equipment",
+          "equipment-abilities": [
+            {
+              "ability-name": "Fountain of Life",
+              "ability-id": "ab_fountainoflife"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Alchemist Armour",
+          "equipment-id": "eq_alchemistarmour",
+          "equipment-type": "armour",
+          "equipment-abilities": [
+            {
+              "ability-name": "Protection From Harm",
+              "ability-id": "ab_protectionfromharm"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Trench Shield",
+          "equipment-id": "eq_trenchshield",
+          "equipment-type": "shield",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Corrosive Ammunition",
+          "equipment-id": "eq_corrosiveammunition",
+          "equipment-type": "equipment",
+          "equipment-abilities": [
+            {
+              "ability-name": "Volatile Concoction",
+              "ability-id": "ab_volatileconcoction"
+            }
+          ]
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Mehteran",
+          "ability-id": "ab_mehteran"
+        }
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "NEGATE GAS",
+          "keyword-id": "kw_negate_kw_gas"
+        },
+        {
+          "keyword-name": "NEGATE FIRE",
+          "keyword-id": "kw_negate_kw_fire"
+        },
+        {
+          "keyword-name": "SULTANATE",
+          "keyword-id": "kw_sultanate"
+        },
+        {
+          "keyword-name": "STRONG",
+          "keyword-id": "kw_strong"
+        },
+        {
+          "keyword-name": "ELITE",
+          "keyword-id": "kw_elite"
+        },
+        {
+          "keyword-name": "TOUGH",
+          "keyword-id": "kw_tough"
+        },
+        {
+          "keyword-name": "NEGATE HEAVY",
+          "keyword-id": "kw_negate_kw_heavy"
+        }
+      ]
+    },
+    {
+      "model-name": "Combat Biologist",
+      "model-id": "md_combatbiologist",
+      "name": "Combat Biologist",
+      "stat-move": "6\"/Infantry",
+      "stat-melee": "+1",
+      "stat-ranged": "0",
+      "stat-armour": "-1",
+      "cost": {
+        "ducats": 0,
+        "glory": 3
+      },
+      "equipment": [
+        {
+          "equipment-name": "Standard Armour",
+          "equipment-id": "eq_standardarmour",
+          "equipment-type": "armour",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Gas Grenades",
+          "equipment-id": "eq_gasgrenades",
+          "equipment-type": "grenade",
+          "equipment-abilities": []
+        },
+        {
+          "equipment-name": "Vivisector",
+          "equipment-id": "eq_vivisector",
+          "equipment-type": "melee weapon",
+          "equipment-abilities": [
+            {
+              "ability-name": "Pain Amplifier",
+              "ability-id": "ab_painamplifier"
+            },
+            {
+              "ability-name": "Inflict Pain",
+              "ability-id": "ab_inflictpain"
+            }
+          ]
+        },
+        {
+          "equipment-name": "Gas Mask",
+          "equipment-id": "eq_gasmask",
+          "equipment-type": "equipment",
+          "equipment-abilities": []
+        }
+      ],
+      "abilities": [
+        {
+          "ability-name": "Prize Specimens",
+          "ability-id": "ab_prizespecimens"
+        },
+        {
+          "ability-name": "Battlefield Vivisection",
+          "ability-id": "ab_battlefieldvivisection"
+        }
+      ],
+      "upgrades": [],
+      "advancements": [],
+      "injuries": [],
+      "keywords": [
+        {
+          "keyword-name": "NEGATE FEAR",
+          "keyword-id": "kw_negate_kw_fear"
+        },
+        {
+          "keyword-name": "NEGATE GAS",
+          "keyword-id": "kw_negate_kw_gas"
+        },
+        {
+          "keyword-name": "MERCENARY",
+          "keyword-id": "kw_mercenary"
+        }
+      ]
+    }
+  ]
+}

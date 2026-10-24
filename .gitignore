@@ -1,0 +1,5 @@
+﻿__pycache__/
+*.pyc
+.venv/
+# TTS saves are large and machine-specific; export.py reads them from the TTS Saves folder
+*.bak

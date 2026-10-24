@@ -1,0 +1,22 @@
+{
+  "factions": [
+    {
+      "id": "mercenaries",
+      "name": "Mercenaries",
+      "subfactions": [],
+      "units": [
+        {"id": "combat-biologist", "name": "Combat Biologist"},
+        {"id": "communicant-anti-tank-hunter", "name": "Communicant Anti-Tank Hunter"},
+        {"id": "goetic-warlock", "name": "Goetic Warlock"},
+        {"id": "mamluk-faris", "name": "Mamluk Faris"},
+        {"id": "mendelist-ammo-monk", "name": "Mendelist Ammo Monk"},
+        {"id": "observer", "name": "Observer"},
+        {"id": "scripture-guardian", "name": "Scripture Guardian"},
+        {"id": "sin-eater", "name": "Sin Eater"},
+        {"id": "sister-of-saint-cosmas", "name": "Sister of Saint Cosmas"},
+        {"id": "witchburner", "name": "Witchburner"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    }
+  ]
+}
