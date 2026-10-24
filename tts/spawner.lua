@@ -9,10 +9,12 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 5
+local SPAWNER_VERSION = 6
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
+-- Converter page (docs/index.html on GitHub Pages): Trench Companion export -> import code.
+local CODE_PAGE = "https://priestofmork.github.io/TTS-TC-Model-Collection/"
 local SPAWN_TAG = "TCM_Spawned"
 local MODEL_TAG      = "TCM_Model"        -- models running tts/model.lua
 local PLATFORM_NAME  = "TC spawn platform"
@@ -192,13 +194,17 @@ local function buildXml()
 
     local fe = index and factionById[sel.f]
     if fe and importing then
-        -- Paste box, set up like TTS Scriber's: a single-line box only draws the visible part of
-        -- its text, while a multi-line one hits Unity's ~16,000-character text limit (the paste
-        -- was cut there and TTS crashed). Line breaks are dropped on paste; JSON doesn't need
-        -- them. The text arrives once in onEndEdit and lives in importText, because
-        -- re-rendering the panel empties the box.
-        row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">Paste the TTS export from Trench Companion. '
-            .. 'Faction and subfaction filter above decide which models are used.</Text>')
+        -- The only import path: Trench Companion's export is too big for a TTS text box (Unity
+        -- cuts UI text at ~16,000 characters), so players turn it into a short code on the
+        -- converter page first. TTS can't open a browser from a script, so the address is shown
+        -- in a read-only box to copy. The code box is single-line (only draws the visible part)
+        -- and read once in onEndEdit; the text lives in importText because re-rendering the
+        -- panel empties the box.
+        row(22, '<Text preferredHeight="22" fontSize="15" alignment="MiddleLeft">1. Open this page in your browser:</Text>')
+        row(36, '<InputField preferredHeight="36" fontSize="15" readOnly="true" lineType="SingleLine">'
+            .. CODE_PAGE .. '</InputField>')
+        row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">2. Paste your Trench Companion TTS export there '
+            .. 'and copy the code. 3. Paste the code here:</Text>')
         row(40, '<InputField id="importBox" preferredHeight="40" fontSize="16" lineType="SingleLine" '
             .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
         row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
@@ -886,7 +892,44 @@ function ui_reload() loadCatalog() end
 function ui_importOpen()
     if busy then setStatus("Still busy, try again in a moment.") return end
     importing, importText = true, ""
-    setStatus("Paste the export, then press Import.")
+    setStatus("Faction and subfaction above decide which models are used.")
+end
+
+-- Unpacks a code from the converter page ("TCM1" + JSON, see docs/index.html) into the shape
+-- of Trench Companion's TTS export that importWarband reads. Returns nil if it isn't a code.
+local function decodeWarband(text)
+    text = string.gsub(text or "", "^%s+", "")
+    if string.sub(text, 1, 4) ~= "TCM1" then return nil end
+    local ok, c = pcall(JSON.decode, string.sub(text, 5))
+    if not ok or type(c) ~= "table" or type(c.s) ~= "table" or type(c.m) ~= "table" then return nil end
+    local S = c.s
+    local function str(i) return S[(tonumber(i) or -1) + 1] end   -- indexes are 0-based
+    local function list(ids, field)
+        local out = {}
+        for _, i in ipairs(ids or {}) do out[#out + 1] = {[field] = str(i)} end
+        return out
+    end
+    local models = {}
+    for _, m in ipairs(c.m) do
+        local equipment = {}
+        for _, e in ipairs(m[8] or {}) do
+            local abilities = {}
+            for k = 3, #e do abilities[#abilities + 1] = {["ability-name"] = str(e[k])} end
+            equipment[#equipment + 1] = {["equipment-name"] = str(e[1]), ["equipment-type"] = str(e[2]),
+                                         ["equipment-abilities"] = abilities}
+        end
+        models[#models + 1] = {
+            ["model-id"] = str(m[1]), ["model-name"] = str(m[2]), name = str(m[3]),
+            ["stat-move"] = str(m[4]), ["stat-melee"] = str(m[5]), ["stat-ranged"] = str(m[6]), ["stat-armour"] = str(m[7]),
+            equipment = equipment,
+            abilities = list(m[9], "ability-name"),
+            upgrades = list(m[10], "upgrade-name"),
+            advancements = list(m[11], "advancement-name"),
+            injuries = list(m[12], "injury-name"),
+            keywords = list(m[13], "keyword-name"),
+        }
+    end
+    return {["warband-name"] = c.n, ["warband-id"] = c.i, models = models}
 end
 
 function ui_importCancel()
@@ -898,9 +941,10 @@ function ui_importText(player, value) importText = value or "" end
 
 function ui_importGo()
     if busy then return end
-    local ok, warband = pcall(JSON.decode, importText)
-    if not ok or type(warband) ~= "table" or type(warband.models) ~= "table" then
-        setStatus("That doesn't look like a Trench Companion TTS export (no models found).")
+    local warband = decodeWarband(importText)
+    if not warband or #warband.models == 0 then
+        setStatus("That isn't a warband code. Make one on the page above from your Trench Companion TTS export, "
+            .. "copy it with the Copy button and paste it here.")
         return
     end
     importing, importText, busy = false, "", true

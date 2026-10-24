@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TC Miniatures – Warband Code</title>
+<style>
+  :root { --bg: #16130f; --panel: #221d17; --text: #eee6d8; --muted: #a8998a; --accent: #b3402a; --ok: #4a9a4a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 16px; }
+  ol { color: var(--muted); padding-left: 20px; margin: 0 0 20px; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  textarea { width: 100%; background: var(--panel); color: var(--text); border: 1px solid #3a3128; border-radius: 6px;
+             padding: 10px; font: 13px/1.4 ui-monospace, monospace; resize: vertical; }
+  #exportBox { height: 220px; }
+  #codeBox { height: 110px; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 10px 18px; font-size: 1rem;
+           cursor: pointer; margin-top: 10px; }
+  button:disabled { opacity: .4; cursor: default; }
+  #status { margin-top: 10px; min-height: 1.5em; }
+  .error { color: #ff7b6b; }
+  .ok { color: #8fd18f; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TC Miniatures – Warband Code</h1>
+  <p>Turns a Trench Companion warband into a short code for the TC Miniatures spawner in Tabletop Simulator.
+     Everything happens in your browser: nothing is uploaded or saved.</p>
+  <ol>
+    <li>In Trench Companion, copy your warband's <b>TTS export</b>.</li>
+    <li>Paste it below and press <b>Make code</b>.</li>
+    <li>Press <b>Copy code</b>, then paste the code into the spawner's import box in TTS.</li>
+  </ol>
+
+  <label for="exportBox">Trench Companion TTS export</label>
+  <textarea id="exportBox" placeholder='{ "warband-id": ..., "warband-name": ..., "models": [ ... ] }'></textarea>
+  <button id="makeBtn">Make code</button>
+
+  <label for="codeBox">Code for TTS</label>
+  <textarea id="codeBox" readonly></textarea>
+  <button id="copyBtn" disabled>Copy code</button>
+  <div id="status"></div>
+</main>
+
+<script>
+// Code format "TCM1" + JSON {n, i, s, m} (keep in sync with decodeWarband in tts/spawner.lua):
+//   n = warband name, i = warband id, s = table of every distinct text (each stored once),
+//   m = one array per model, all texts as 0-based indexes into s:
+//   [model-id, model-name, name, move, melee, ranged, armour,
+//    [[equipment-name, equipment-type, ability...], ...], [abilities], [upgrades],
+//    [advancements], [injuries], [keywords]]
+// The export repeats field names and texts in every model and carries ids the spawner
+// doesn't use; this is about a tenth of its size and fits TTS's text box.
+function makeCode(exp) {
+  const strings = [], index = new Map();
+  const s = x => {
+    x = String(x ?? "");
+    if (!index.has(x)) { index.set(x, strings.length); strings.push(x); }
+    return index.get(x);
+  };
+  const names = (list, field) => (list || []).map(e => s(e[field]));
+  const models = exp.models.map(m => [
+    s(m["model-id"]), s(m["model-name"]), s(m["name"]),
+    s(m["stat-move"]), s(m["stat-melee"]), s(m["stat-ranged"]), s(m["stat-armour"]),
+    (m.equipment || []).map(e => [s(e["equipment-name"]), s(e["equipment-type"]), ...names(e["equipment-abilities"], "ability-name")]),
+    names(m.abilities, "ability-name"),
+    names(m.upgrades, "upgrade-name"),
+    names(m.advancements, "advancement-name"),
+    names(m.injuries, "injury-name"),
+    names(m.keywords, "keyword-name"),
+  ]);
+  return "TCM1" + JSON.stringify({ n: exp["warband-name"] || "Warband", i: exp["warband-id"] ?? null, s: strings, m: models });
+}
+
+const exportBox = document.getElementById("exportBox");
+const codeBox = document.getElementById("codeBox");
+const copyBtn = document.getElementById("copyBtn");
+const status = document.getElementById("status");
+const say = (text, cls) => { status.textContent = text; status.className = cls || ""; };
+
+document.getElementById("makeBtn").addEventListener("click", () => {
+  codeBox.value = ""; copyBtn.disabled = true;
+  let exp;
+  try { exp = JSON.parse(exportBox.value); } catch (e) {
+    say("That isn't a complete Trench Companion export (it isn't valid JSON). Copy the TTS export again and paste all of it.", "error");
+    return;
+  }
+  if (!exp || !Array.isArray(exp.models) || exp.models.length === 0) {
+    say("No models found. Is this the TTS export of a warband?", "error");
+    return;
+  }
+  codeBox.value = makeCode(exp);
+  copyBtn.disabled = false;
+  say(`Code for "${exp["warband-name"]}" with ${exp.models.length} models (${codeBox.value.length} characters).`, "ok");
+});
+
+copyBtn.addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(codeBox.value); }
+  catch (e) { codeBox.select(); document.execCommand("copy"); }
+  say("Copied. Paste it into the spawner's import box in TTS.", "ok");
+});
+</script>
+</body>
+</html>
