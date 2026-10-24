@@ -211,8 +211,9 @@ local function buildXml()
         .. (config and '<Button onClick="ui_unsorted" fontSize="16">Check unsorted</Button>' or '')
         .. '<Button onClick="ui_reload" fontSize="16">Reload config</Button></HorizontalLayout>')
 
-    -- Activation tokens: non-model objects in the zone (multi-state tokens) are tagged for the
-    -- selected faction or as the general token. They stay where they are; export reads them.
+    -- Activation tokens: every unlocked object in the zone (tokens can be tiles or custom
+    -- models) is tagged for the selected faction or as the general token. They stay where they
+    -- are; export reads them.
     if config then
         row(36, '<HorizontalLayout preferredHeight="36" spacing="6">'
             .. '<Button onClick="ui_tokenFaction" fontSize="15">Activation token: this faction</Button>'
@@ -572,14 +573,15 @@ function ui_unsorted() checkUnsorted() end
 
 local function tagActivationTokens(f)
     if busy or not config then return end
-    local _, _, others = scanZone()
+    local items, _, others = scanZone()
+    for _, it in ipairs(items) do others[#others + 1] = it.obj end
     clearHighlights()
     for _, obj in ipairs(others) do
         obj.setGMNotes(JSON.encode({tcm = "activation", f = f}))
         highlight(obj, COLOR_RETAG)
     end
     if #others == 0 then
-        setStatus("Put the activation token (not a model) into the zone first.")
+        setStatus("Put the activation token into the zone first.")
     else
         setStatus("Tagged " .. #others .. " object(s) as activation token for '" .. f .. "'. Leave them in the save; export picks them up.")
     end

@@ -167,6 +167,10 @@ def clean(data, unit_name, w, d):
     strip(data)
     data["Nickname"] = unit_name  # source nicknames are often another player's stat block
     data["Locked"] = False
+    # Spawned models are Figurines (TypeIndex 1): other table scripts look for that type.
+    for asset in ("CustomMesh", "CustomAssetbundle"):
+        if asset in data:
+            data[asset]["TypeIndex"] = 1
 
     t = data.setdefault("Transform", {})
     t["posX"] = t["posY"] = t["posZ"] = 0.0

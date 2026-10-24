@@ -10,8 +10,9 @@
 --  * Image tokens: drop a token tagged TCUITokenSimple / TCUITokenEquipment onto the model.
 --    It shows as an icon above the model; click the icon to remove it.
 --  * Floating markers: once the model is taken off the spawner's platform it gets its
---    faction's activation token floating above it. Any die dropped onto the model floats
---    next to that token. Markers move back above the model whenever it is put down.
+--    faction's activation token floating above it; any multi-state token dropped onto it
+--    links as its activation token too. Any die dropped onto the model floats next to that
+--    token. Markers stay above the model, also while it is carried.
 --    Right-click a die -> "Remove marker", or drag it off the model to unlink it.
 --
 -- Ideas from the legacy UI extender; stabilisation from Pyromaniacal's Stabilized Bases (MIT).
@@ -22,7 +23,7 @@ local ACTIVATION_TAG = "TCM_Activation"
 local PLATFORM_NAME  = "TC spawn platform"
 local TOKEN_TAGS     = {"TCUITokenSimple", "TCUITokenEquipment"}
 
-local MARKER_HEIGHT  = 0.8    -- markers float this far above the top of the model
+local MARKER_GAP     = 0.8    -- space between the top of the model and the bottom of a marker
 local MARKER_SPACING = 1.1    -- distance between markers in the row
 local RANGE_STEPS    = 64     -- points per range ring
 
@@ -60,11 +61,12 @@ local function modelTop()
     return b.center.y - b.size.y / 2 + h
 end
 
--- Slot i of n in a row above the model, turned with the model.
-local function slotPosition(i, n)
+-- Slot i of n in a row above the model, turned with the model. markerHeight is the
+-- marker's own height, so its bottom (not its centre) sits MARKER_GAP above the model.
+local function slotPosition(i, n, markerHeight)
     local offset = Vector((i - (n + 1) / 2) * MARKER_SPACING, 0, 0):rotateOver("y", self.getRotation().y)
     local p = self.getPosition()
-    return Vector(p.x + offset.x, modelTop() + MARKER_HEIGHT, p.z + offset.z)
+    return Vector(p.x + offset.x, modelTop() + MARKER_GAP + (markerHeight or 1) / 2, p.z + offset.z)
 end
 
 local function onPlatform()
@@ -121,7 +123,8 @@ local function setFloating(obj, link, on)
 end
 
 -- Moves every linked marker back into its slot and forgets markers that no longer exist.
-function snapMarkers()
+-- instant = teleport (used while the model is carried), otherwise a short smooth move.
+function snapMarkers(instant)
     local live = {}
     for _, l in ipairs(state.links) do
         local o = getObjectFromGUID(l.guid)
@@ -130,10 +133,15 @@ function snapMarkers()
     state.links = {}
     for i, e in ipairs(live) do
         state.links[i] = e.link
-        setFloating(e.obj, e.link, true)
-        e.obj.setPositionSmooth(slotPosition(i, #live), false, true)
+        local pos = slotPosition(i, #live, e.obj.getBoundsNormalized().size.y)
+        if instant == true then
+            e.obj.setPosition(pos)
+        else
+            setFloating(e.obj, e.link, true)
+            e.obj.setPositionSmooth(pos, false, true)
+        end
     end
-    saveState()
+    if instant ~= true then saveState() end
 end
 
 local function unlink(guid, destroy)
@@ -179,13 +187,21 @@ local function requestActivation()
         if not data or self == nil then return end
         spawnObjectData({
             data = data,
-            position = slotPosition(1, #state.links + 1),
+            position = slotPosition(1, #state.links + 1, 1),
             callback_function = function(o)
                 state.activation = o.getGUID()
                 link(o, true)
             end,
         })
     end)
+end
+
+-- Activation tokens are multi-state objects; any one dropped onto a model counts, whether it
+-- came from the catalog (tagged) or from a table's bag (untagged).
+local function isActivationToken(obj)
+    if obj.hasTag(ACTIVATION_TAG) then return true end
+    local ok, states = pcall(obj.getStates)
+    return ok and type(states) == "table" and #states > 0
 end
 
 -- ============ IMAGE TOKENS ============
@@ -196,18 +212,14 @@ local function hasTokenTag(obj)
     return false
 end
 
-local function xmlEscape(s)
-    return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
-end
-
 -- Buttons use the token's index as id, so names with special characters can't break the XML.
 local function renderTokens()
     local assets, buttons, n = {}, {}, #state.tokens
     for i, t in ipairs(state.tokens) do
         if t.url and t.url ~= "" then   -- setCustomAssets fails on a nil/empty URL
             assets[#assets + 1] = {name = "tok" .. i, url = t.url}
-            buttons[#buttons + 1] = '<Button id="tok:' .. i .. '" onClick="ui_removeToken" tooltip="' .. xmlEscape(t.name)
-                .. '" rectAlignment="MiddleCenter" offsetXY="' .. ((i - (n + 1) / 2) * 65) .. ' -90" width="60" height="60"'
+            -- No tooltip: TTS draws object-UI tooltips on the ground and can leave them stuck.
+            buttons[#buttons + 1] = '<Button id="tok:' .. i .. '" onClick="ui_removeToken" rectAlignment="MiddleCenter" offsetXY="' .. ((i - (n + 1) / 2) * 65) .. ' -90" width="60" height="60"'
                 .. ' colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"><Image image="tok' .. i
                 .. '" width="60" height="60" preserveAspect="true"/></Button>'
         end
@@ -297,7 +309,17 @@ function loadPosition()
 end
 
 -- ============ EVENTS ============
-function onPickUp() destabilize() end
+-- While the model is held, keep its markers above it (every few frames, until it's dropped).
+local function followWhileHeld()
+    if self == nil or self.held_by_color == nil then return end
+    snapMarkers(true)
+    Wait.frames(followWhileHeld, 3)
+end
+
+function onPickUp()
+    destabilize()
+    if #state.links > 0 then Wait.frames(followWhileHeld, 3) end
+end
 
 -- Global event, delivered to every object script: handles the model itself being put down,
 -- dice/tokens dropped onto it, and its markers being dragged away.
@@ -314,14 +336,18 @@ function onObjectDrop(player_color, obj)
     end
     local linked = findLink(obj.getGUID())
     local token = hasTokenTag(obj)
-    if not (linked or token or obj.type == "Dice" or obj.hasTag(ACTIVATION_TAG)) then return end
+    local activation = not token and isActivationToken(obj)
+    if not (linked or token or activation or obj.type == "Dice") then return end
     local onto = isOntoMe(obj.getPosition())
     if token then
         if onto then addToken(obj) end
     elseif onto then
-        local isActivation = obj.hasTag(ACTIVATION_TAG)
-        if isActivation and not state.activation then state.activation = obj.getGUID() end
-        link(obj, isActivation)
+        if activation then
+            -- Tagged so "Ready all" finds it; a second activation token replaces nothing, it just links.
+            if not obj.hasTag(ACTIVATION_TAG) then obj.addTag(ACTIVATION_TAG) end
+            if not state.activation then state.activation = obj.getGUID() end
+        end
+        link(obj, activation)
     elseif linked then
         unlink(obj.getGUID(), false)
     end
@@ -333,6 +359,7 @@ function onObjectStateChange(obj, oldGuid)
     if not i then return end
     state.links[i].guid = obj.getGUID()
     if state.activation == oldGuid then state.activation = obj.getGUID() end
+    if not obj.hasTag(ACTIVATION_TAG) then obj.addTag(ACTIVATION_TAG) end
     snapMarkers()
 end
 
