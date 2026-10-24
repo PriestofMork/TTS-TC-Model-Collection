@@ -326,8 +326,11 @@ local function scanZone()
     local items, ignored, seen, others = {}, 0, {}, {}
     for _, hit in ipairs(hits) do
         local obj = hit.hit_object
-        if obj and obj ~= self and not seen[obj.getGUID()] then
-            seen[obj.getGUID()] = true
+        -- Some hits (e.g. parts of the table) have no GUID; they're never models or tokens,
+        -- and a nil table key would throw.
+        local guid = obj and obj ~= self and obj.getGUID()
+        if guid and not seen[guid] then
+            seen[guid] = true
             -- Locked objects are scenery/table parts: anything dragged in is unlocked.
             if MODEL_NAMES[obj.name] and not obj.getLock() then
                 items[#items + 1] = {obj = obj, tag = parseTag(obj.getGMNotes())}

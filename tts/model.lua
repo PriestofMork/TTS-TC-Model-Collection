@@ -24,7 +24,8 @@ local PLATFORM_NAME  = "TC spawn platform"
 local TOKEN_TAGS     = {"TCUITokenSimple", "TCUITokenEquipment"}
 
 local MARKER_GAP     = 0.8    -- space between the top of the model and the bottom of a marker
-local MARKER_SPACING = 1.1    -- distance between markers in the row
+local MARKER_SPACING = 1.1    -- distance between dice in the row
+local DICE_OFFSET    = 1.0    -- first die sits this far to the side of the activation token
 local RANGE_STEPS    = 64     -- points per range ring
 
 -- f / cv are set by the spawner (faction id, catalog version). links = floating markers,
@@ -61,10 +62,12 @@ local function modelTop()
     return b.center.y - b.size.y / 2 + h
 end
 
--- Slot i of n in a row above the model, turned with the model. markerHeight is the
--- marker's own height, so its bottom (not its centre) sits MARKER_GAP above the model.
-local function slotPosition(i, n, markerHeight)
-    local offset = Vector((i - (n + 1) / 2) * MARKER_SPACING, 0, 0):rotateOver("y", self.getRotation().y)
+-- Position above the model, turned with it. The activation token (diceIndex nil) is centred
+-- over the model; dice go to its side in a row. markerHeight is the marker's own height,
+-- so its bottom (not its centre) sits MARKER_GAP above the model.
+local function slotPosition(diceIndex, markerHeight)
+    local x = diceIndex and (DICE_OFFSET + (diceIndex - 1) * MARKER_SPACING) or 0
+    local offset = Vector(x, 0, 0):rotateOver("y", self.getRotation().y)
     local p = self.getPosition()
     return Vector(p.x + offset.x, modelTop() + MARKER_GAP + (markerHeight or 1) / 2, p.z + offset.z)
 end
@@ -105,20 +108,19 @@ local function findLink(guid)
 end
 
 -- Markers stay normal objects (number keys, state switching, picking up all work); only
--- gravity is switched off, and high drag keeps bumps from pushing them away.
+-- gravity is switched off, and high drag keeps bumps from pushing them away. Uses TTS's own
+-- use_gravity / drag members: setting the Unity Rigidbody directly gets overridden by TTS.
 local function setFloating(obj, link, on)
-    local rb = obj.getComponent("Rigidbody")
-    if not rb then return end
     if on then
-        rb.set("useGravity", false)
-        rb.set("drag", 10)
-        rb.set("angularDrag", 10)
+        obj.use_gravity = false
+        obj.drag = 10
+        obj.angular_drag = 10
         obj.setVelocity({0, 0, 0})
         obj.setAngularVelocity({0, 0, 0})
     else
-        rb.set("useGravity", true)
-        rb.set("drag", link.drag or 0)
-        rb.set("angularDrag", link.ang or 0.05)
+        obj.use_gravity = true
+        obj.drag = link.drag or 0.1
+        obj.angular_drag = link.ang or 0.1
     end
 end
 
@@ -131,11 +133,18 @@ function snapMarkers(instant)
         if o then live[#live + 1] = {link = l, obj = o} end
     end
     state.links = {}
+    local dice = 0
     for i, e in ipairs(live) do
         state.links[i] = e.link
-        local pos = slotPosition(i, #live, e.obj.getBoundsNormalized().size.y)
+        local diceIndex = nil
+        if e.link.guid ~= state.activation then
+            dice = dice + 1
+            diceIndex = dice
+        end
+        local pos = slotPosition(diceIndex, e.obj.getBoundsNormalized().size.y)
         if instant == true then
             e.obj.setPosition(pos)
+            e.obj.setVelocity({0, 0, 0})
         else
             setFloating(e.obj, e.link, true)
             e.obj.setPositionSmooth(pos, false, true)
@@ -164,11 +173,7 @@ end
 
 local function link(obj, first)
     if findLink(obj.getGUID()) then snapMarkers() return end
-    local rb = obj.getComponent("Rigidbody")
-    local entry = {guid = obj.getGUID()}
-    if rb then
-        pcall(function() entry.drag, entry.ang = rb.get("drag"), rb.get("angularDrag") end)
-    end
+    local entry = {guid = obj.getGUID(), drag = obj.drag, ang = obj.angular_drag}
     if first then table.insert(state.links, 1, entry) else state.links[#state.links + 1] = entry end
     addRemoveMenu(obj)
     snapMarkers()
@@ -187,7 +192,7 @@ local function requestActivation()
         if not data or self == nil then return end
         spawnObjectData({
             data = data,
-            position = slotPosition(1, #state.links + 1, 1),
+            position = slotPosition(nil, 1),
             callback_function = function(o)
                 state.activation = o.getGUID()
                 link(o, true)
