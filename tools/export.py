@@ -214,7 +214,10 @@ def main():
         else:
             bucket[key] = entry
 
-    # Same model under several units is allowed (it may fit both) but worth knowing about.
+    # Same model under several units is intended: one model can fit several units (e.g. a
+    # Takwin Homunculus that is also a Golem). The maintainer copies it in TTS and tags the
+    # copy for the other unit. Listed as info so accidental double tags can still be spotted.
+    shared = []
     seen = {}
     for (f, u), bucket in units.items():
         for key in bucket:
@@ -222,7 +225,7 @@ def main():
                 seen.setdefault(key, []).append(f"{f}/{u}")
     for key, where in seen.items():
         if len(where) > 1:
-            warnings.append(f"same model in several units {where} (asset {short_key(key)})")
+            shared.append(f"{', '.join(where)} (asset {short_key(key)})")
 
     # ---- build output in config order, entries sorted by their identity
     files = {}  # path relative to catalog/ -> text
@@ -278,6 +281,10 @@ def main():
     total = sum(len(b) for b in units.values())
     print(f"Tagged objects found: {tagged}, exported models: {total}")
     print("\n".join(summary) or "  (nothing to export)")
+    if shared:
+        print(f"\nModels used by several units ({len(shared)}):")
+        for line in shared:
+            print("  " + line)
     if warnings:
         print(f"\nWarnings ({len(warnings)}):")
         for w in warnings:

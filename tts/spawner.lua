@@ -23,7 +23,20 @@ local MAX_ROW_WIDTH = 30     -- rows wrap after this width
 local MODEL_PAD     = 0.4    -- space between models in a row
 local ROW_GAP       = 0.6    -- space between rows
 local LABEL_DEPTH   = 1.4    -- room reserved for a unit's label above its first row
-local SPAWN_HEIGHT  = 0.5    -- models are spawned this far above the table and settle
+local BLOCK_GAP     = 1.0    -- space between two units' platforms
+
+-- Each unit stands on its own locked platform, raised above the surface the spawner stands
+-- on, so spawned models never land in terrain or on the board.
+local PLATFORM_HEIGHT    = 2      -- top of the platform above the spawner's base (inches)
+local PLATFORM_THICKNESS = 0.2
+local PLATFORM_MARGIN    = 0.5    -- platform border around the label and rows
+local PLATFORM_COLOR     = {0.12, 0.12, 0.12}
+local SPAWN_HEIGHT       = 0.3    -- models are spawned this far above the platform and settle
+
+-- Spawn-area indicator (vector lines on the spawner) at platform height. Only a hint of where
+-- and in which direction units appear: the real row width, and a short depth.
+local INDICATOR_DEPTH = 10
+local INDICATOR_COLOR = {0.3, 0.8, 1}
 
 -- Catalog models have rotY 0 (export resets it). They get the spawner's yaw plus this.
 -- Change to 180 if models come out facing away from the players.
@@ -51,6 +64,7 @@ local renderPending = false
 local unitCache    = {}      -- unit file -> decoded entries (for the loaded catalog version)
 local panelHeight  = 720     -- UI units; set by buildXml, used by the layout
 local layoutEdge   = nil     -- distance from the spawner's centre to the first row (world units)
+local showArea     = true    -- spawn-area indicator visible
 
 -- ============ UTIL ============
 local function xmlEscape(s)
@@ -72,17 +86,48 @@ end
 -- (both in world units from the back edge of the panel). The panel is usually much bigger
 -- than the object, so its size decides where the layout starts. positionToWorld uses local
 -- (scaled) units: UI units are 100 per local unit, and dividing by scale gives world units.
-local function layoutToWorld(x, z)
+local function getLayoutEdge()
+    -- Fixed once units are on the table, so switching to a faction with a taller menu
+    -- doesn't shift where new rows go relative to existing ones.
+    if layoutEdge then return layoutEdge end
+    local panelHalf = panelHeight / 2 / 100 * UI_SCALE * self.getScale().z
+    return math.max(self.getBoundsNormalized().size.z / 2, panelHalf) + LAYOUT_GAP
+end
+
+-- Layout (x, z) -> local (scaled) coordinates of the spawner, at world height offset dy
+-- above the spawner's base. Used for vector lines, which are drawn in local space.
+local function layoutToLocal(x, z, dy)
+    local s, p = self.getScale(), self.getPosition()
+    return {-x / s.x, (tableY() + dy - p.y) / s.y, -(getLayoutEdge() + z) / s.z}
+end
+
+-- Layout (x, z) -> world position at world height y.
+local function layoutToWorld(x, z, y)
     local s = self.getScale()
-    if not layoutEdge then
-        -- Measured once per layout, so switching to a faction with a taller menu later
-        -- doesn't shift where new rows go relative to existing ones.
-        local panelHalf = panelHeight / 2 / 100 * UI_SCALE * s.z
-        layoutEdge = math.max(self.getBoundsNormalized().size.z / 2, panelHalf) + LAYOUT_GAP
-    end
-    local pos = self.positionToWorld(Vector(-x / s.x, 0, -(layoutEdge + z) / s.z))
-    pos.y = tableY() + SPAWN_HEIGHT
+    local pos = self.positionToWorld(Vector(-x / s.x, 0, -(getLayoutEdge() + z) / s.z))
+    pos.y = y
     return pos
+end
+
+local function platformTop()
+    return tableY() + PLATFORM_HEIGHT
+end
+
+-- Draws where units will spawn: an outline at platform height with an arrow pointing away
+-- from the panel. Vector lines belong to the spawner, so they follow it when it moves.
+local function drawIndicator()
+    if not showArea then
+        self.setVectorLines({})
+        return
+    end
+    local h, half = PLATFORM_HEIGHT, MAX_ROW_WIDTH / 2
+    local function at(x, z) return layoutToLocal(x, z, h) end
+    local function line(points) return {points = points, color = INDICATOR_COLOR, thickness = 0.1} end
+    self.setVectorLines({
+        line({at(-half, 0), at(half, 0), at(half, INDICATOR_DEPTH), at(-half, INDICATOR_DEPTH), at(-half, 0)}),
+        line({at(0, 1), at(0, 5)}),
+        line({at(-1, 4), at(0, 5), at(1, 4)}),
+    })
 end
 
 local function unitKey(f, u) return f .. "/" .. u end
@@ -179,7 +224,9 @@ local function buildXml()
 
         row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
             .. '<Button onClick="ui_spawnFaction">Spawn whole faction</Button>'
-            .. '<Button onClick="ui_clearAll">Clear all</Button></HorizontalLayout>')
+            .. '<Button onClick="ui_clearAll">Clear all</Button>'
+            .. '<Button onClick="ui_toggleArea">' .. (showArea and 'Hide area' or 'Show area') .. '</Button>'
+            .. '</HorizontalLayout>')
     else
         row(40, '<Button onClick="ui_reload" preferredHeight="40">Reload catalog</Button>')
     end
@@ -201,6 +248,7 @@ function render()
     Wait.frames(function()
         renderPending = false
         self.UI.setXml(buildXml())
+        drawIndicator()   -- after buildXml: the layout starts at the panel's edge
     end, 1)
 end
 
@@ -209,17 +257,24 @@ end
 -- (hundreds of models) doesn't freeze the game on one frame.
 local queue, queueRunning, queueDone = {}, false, nil
 
+-- A job may return a number of frames to wait before the next job (e.g. to let a platform
+-- finish spawning before models are dropped onto it).
 local function runQueue()
+    local pause = 1
     for _ = 1, BATCH_SIZE do
         -- MoonSharp's table.remove throws on an empty table (standard Lua returns nil).
         if #queue == 0 then break end
         local job = table.remove(queue, 1)
         -- One failing job must not stop the queue, or `busy` would stay set forever.
-        local ok, err = pcall(job)
-        if not ok then print("[TC Spawner] " .. tostring(err)) end
+        local ok, result = pcall(job)
+        if not ok then print("[TC Spawner] " .. tostring(result)) end
+        if ok and type(result) == "number" then
+            pause = result
+            break
+        end
     end
     if #queue > 0 then
-        Wait.frames(runQueue, 1)
+        Wait.frames(runQueue, pause)
     else
         queueRunning = false
         local done = queueDone
@@ -273,29 +328,64 @@ local function spawnModel(data, pos, memo)
     })
 end
 
--- Lays out one unit: a label, then rows of models wrapped at MAX_ROW_WIDTH, each row as deep
--- as its deepest model. w/d come from the intake because bounds aren't known before loading.
+-- A plain locked block, spawned locked from the start so it never falls. Its native size
+-- isn't known up front, so it is scaled to the wanted size once it exists.
+local function spawnPlatform(pos, width, depth, memo)
+    local c = PLATFORM_COLOR
+    spawnObjectData({
+        data = {
+            Name         = "BlockSquare",
+            Nickname     = "TC spawn platform",
+            Transform    = {posX = pos.x, posY = pos.y, posZ = pos.z, rotX = 0, rotY = self.getRotation().y,
+                            rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1},
+            ColorDiffuse = {r = c[1], g = c[2], b = c[3]},
+            Locked       = true,
+            Tooltip      = false,
+            Grid         = false,
+            Snap         = false,
+            Tags         = {SPAWN_TAG},
+            Memo         = memo,
+        },
+        callback_function = function(obj)
+            obj.memo = memo
+            if not obj.hasTag(SPAWN_TAG) then obj.addTag(SPAWN_TAG) end
+            local size, scale = obj.getBoundsNormalized().size, obj.getScale()
+            obj.setScale({scale.x * width / size.x, scale.y * PLATFORM_THICKNESS / size.y, scale.z * depth / size.z})
+        end,
+    })
+end
+
+-- Lays out one unit on its own platform: a label, then rows of models wrapped at
+-- MAX_ROW_WIDTH, each row as deep as its deepest model. w/d come from the intake because
+-- bounds aren't known before the models load.
 local function queueUnit(f, unit, entries)
     local key = unitKey(f, unit.id)
     local memo = token .. "|" .. key
     if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the panel again
+    layoutEdge = getLayoutEdge()
+
+    local top = platformTop()
+    local blockStart = cursorZ
+    local z = blockStart + PLATFORM_MARGIN
+    local jobs = {}
 
     -- Label and rows are centred on the spawner.
-    local labelPos = layoutToWorld(0, cursorZ + LABEL_DEPTH / 2)
+    local labelPos = layoutToWorld(0, z + LABEL_DEPTH / 2, top + 0.05)
     local label = unit.name .. " (" .. #entries .. ")"
-    queue[#queue + 1] = function() spawnLabel(label, labelPos, memo) end
-    cursorZ = cursorZ + LABEL_DEPTH
+    jobs[#jobs + 1] = function() spawnLabel(label, labelPos, memo) end
+    z = z + LABEL_DEPTH
 
-    local x, rowDepth, row = 0, 0, {}   -- x = width used so far in this row
+    local x, rowDepth, row, widest = 0, 0, {}, 0   -- x = width used so far in this row
     local function flushRow()
-        local zc = cursorZ + rowDepth / 2
+        local zc = z + rowDepth / 2
         local rowWidth = x - MODEL_PAD
+        if rowWidth > widest then widest = rowWidth end
         for _, item in ipairs(row) do
-            local pos = layoutToWorld(item.x - rowWidth / 2, zc)
+            local pos = layoutToWorld(item.x - rowWidth / 2, zc, top + SPAWN_HEIGHT)
             local data = item.data
-            queue[#queue + 1] = function() spawnModel(data, pos, memo) end
+            jobs[#jobs + 1] = function() spawnModel(data, pos, memo) end
         end
-        cursorZ = cursorZ + rowDepth + ROW_GAP
+        z = z + rowDepth + ROW_GAP
         x, rowDepth, row = 0, 0, {}
     end
 
@@ -307,6 +397,18 @@ local function queueUnit(f, unit, entries)
         if d > rowDepth then rowDepth = d end
     end
     if #row > 0 then flushRow() end
+
+    -- The platform covers the label (estimated at ~0.5" per character) and the widest row.
+    local depth = z - ROW_GAP + PLATFORM_MARGIN - blockStart
+    local width = math.max(widest, #label * 0.5) + 2 * PLATFORM_MARGIN
+    local platformPos = layoutToWorld(0, blockStart + depth / 2, top - PLATFORM_THICKNESS / 2)
+    queue[#queue + 1] = function()
+        spawnPlatform(platformPos, width, depth, memo)
+        return 5   -- let the platform exist and be scaled before models drop onto it
+    end
+    for _, job in ipairs(jobs) do queue[#queue + 1] = job end
+
+    cursorZ = blockStart + depth + BLOCK_GAP
     spawned[key] = true
     saveState()
 end
@@ -522,9 +624,16 @@ end
 
 function ui_reload() loadCatalog() end
 
+function ui_toggleArea()
+    showArea = not showArea
+    saveState()
+    render()
+end
+
 -- ============ SAVE / LOAD ============
 function onSave()
-    return JSON.encode({token = token, cursorZ = cursorZ, layoutEdge = layoutEdge, f = sel.f, sub = sel.sub})
+    return JSON.encode({token = token, cursorZ = cursorZ, layoutEdge = layoutEdge, f = sel.f, sub = sel.sub,
+                        showArea = showArea})
 end
 
 -- Each step runs protected and reports its name, so a failure in TTS says where it happened
@@ -546,6 +655,7 @@ function onLoad(saved_data)
             if type(data) == "table" then
                 token, cursorZ, layoutEdge = data.token, data.cursorZ or 0, data.layoutEdge
                 sel.f, sel.sub = data.f, data.sub
+                if data.showArea == false then showArea = false end
             end
         end
     end)

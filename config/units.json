@@ -1,6 +1,180 @@
 {
   "factions": [
     {
+      "id": "new-antioch",
+      "name": "New Antioch",
+      "subfactions": [
+        {"id": "papal-states-intervention-force", "name": "Papal States Intervention Force"},
+        {"id": "eire-rangers", "name": "Eire Rangers"},
+        {"id": "stosstruppen-of-the-free-state-of-prussia", "name": "Stoßtruppen of the Free State of Prussia"},
+        {"id": "kingdom-of-alba-assault-detatchment", "name": "Kingdom of Alba Assault Detatchment"},
+        {"id": "expeditionary-forces-of-abyssinia", "name": "Expeditionary Forces of Abyssinia"},
+        {"id": "the-red-brigade", "name": "The Red Brigade"}
+      ],
+      "units": [
+        {"id": "lieutenant", "name": "Lieutenant"},
+        {"id": "sniper-priest", "name": "Sniper Priest"},
+        {"id": "trench-cleric", "name": "Trench Cleric"},
+        {"id": "combat-engineer", "name": "Combat Engineer"},
+        {"id": "combat-medic", "name": "Combat Medic"},
+        {"id": "mechanized-heavy-infantry", "name": "Mechanized Heavy Infantry"},
+        {"id": "shocktrooper", "name": "Shocktrooper"},
+        {"id": "yeoman", "name": "Yeoman"},
+        {"id": "lector", "name": "Lector"},
+        {"id": "eire-lieutenant", "name": "Eire Lieutenant"},
+        {"id": "eire-warrior-priest", "name": "Eire Warrior Priest"},
+        {"id": "highland-lieutenant", "name": "Highland Lieutenant"},
+        {"id": "highland-mechanized-infantry", "name": "Highland Mechanized Infantry"},
+        {"id": "highland-shocktrooper", "name": "Highland Shocktrooper"},
+        {"id": "holy-warrior", "name": "Holy Warrior"},
+        {"id": "abyssinian-mechanized-infantry", "name": "Abyssinian Mechanized Infantry"},
+        {"id": "crimson-communicant", "name": "Crimson Communicant"},
+        {"id": "attack-dog", "name": "Attack Dog"},
+        {"id": "guard-dog", "name": "Guard Dog"},
+        {"id": "mercy-dog", "name": "Mercy Dog"},
+        {"id": "trench-dog", "name": "Trench Dog"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    },
+    {
+      "id": "trench-pilgrims",
+      "name": "Trench Pilgrims",
+      "subfactions": [
+        {"id": "procession-of-the-sacred-affliction", "name": "Procession of the Sacred Affliction"},
+        {"id": "cavalcade-of-the-tenth-plague", "name": "Cavalcade of the Tenth Plague"},
+        {"id": "war-pilgrimage-of-saint-methodius", "name": "War Pilgrimage of Saint Methodius"}
+      ],
+      "units": [
+        {"id": "war-prophet", "name": "War Prophet"},
+        {"id": "castigator", "name": "Castigator"},
+        {"id": "communicant", "name": "Communicant"},
+        {"id": "anchorite-shrine", "name": "Anchorite Shrine"},
+        {"id": "ecclesiastic-prisoner", "name": "Ecclesiastic Prisoner"},
+        {"id": "stigmatic-nun", "name": "Stigmatic Nun"},
+        {"id": "trench-pilgrim", "name": "Trench Pilgrim"},
+        {"id": "lazarist-prophet", "name": "Lazarist Prophet"},
+        {"id": "lazarist-castigator", "name": "Lazarist Castigator"},
+        {"id": "lazarist-communicant", "name": "Lazarist Communicant"},
+        {"id": "lazarist-communicant-of-the-flock", "name": "Lazarist Communicant of the Flock"},
+        {"id": "leper-knight", "name": "Leper Knight"},
+        {"id": "leper-pilgrims", "name": "Leper-Pilgrims"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    },
+    {
+      "id": "iron-sultanate",
+      "name": "Iron Sultanate",
+      "subfactions": [
+        {"id": "fidai-of-alamut-the-cabal-of-assassins", "name": "Fidai of Alamut - The Cabal of Assassins"},
+        {"id": "house-of-wisdom", "name": "House of Wisdom"},
+        {"id": "defenders-of-the-iron-wall", "name": "Defenders of the Iron Wall"}
+      ],
+      "units": [
+        {"id": "yuzbasi-captain", "name": "Yüzbaşı Captain"},
+        {"id": "jabirean-alchemist", "name": "Jabirean Alchemist"},
+        {"id": "sultanate-assassin", "name": "Sultanate Assassin"},
+        {"id": "azeb", "name": "Azeb"},
+        {"id": "brazen-bull", "name": "Brazen Bull"},
+        {"id": "janissary", "name": "Janissary"},
+        {"id": "lion-of-jabir", "name": "Lion of Jabir"},
+        {"id": "sultanate-sapper", "name": "Sultanate Sapper"},
+        {"id": "master-assassin", "name": "Master Assassin"},
+        {"id": "assassin-acolyte", "name": "Assassin Acolyte"},
+        {"id": "dervish", "name": "Dervish"},
+        {"id": "faris", "name": "Fāris"},
+        {"id": "takwin-homunculus", "name": "Takwin Homunculus"},
+        {"id": "silahdar", "name": "Silahdar"},
+        {"id": "janissary-officer", "name": "Janissary Officer"},
+        {"id": "sipahi-automaton-cavalry", "name": "Sipahi Automaton Cavalry"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    },
+    {
+      "id": "heretic-legion",
+      "name": "Heretic Legion",
+      "subfactions": [
+        {"id": "trench-ghosts", "name": "Trench Ghosts"},
+        {"id": "knights-of-avarice", "name": "Knights of Avarice"},
+        {"id": "heretic-naval-raiders", "name": "Heretic Naval Raiders"}
+      ],
+      "units": [
+        {"id": "heretic-priest", "name": "Heretic Priest"},
+        {"id": "death-commando", "name": "Death Commando"},
+        {"id": "heretic-chorister", "name": "Heretic Chorister"},
+        {"id": "anointed-heavy-infantry", "name": "Anointed Heavy Infantry"},
+        {"id": "artillery-witch", "name": "Artillery Witch"},
+        {"id": "heretic-trooper", "name": "Heretic Trooper"},
+        {"id": "war-wolf-assault-beast", "name": "War Wolf Assault Beast"},
+        {"id": "wretched", "name": "Wretched"},
+        {"id": "barbed-wire-banshee", "name": "Barbed Wire Banshee"},
+        {"id": "heretic-priest-of-mammon", "name": "Heretic Priest of Mammon"},
+        {"id": "artillery-witches-of-mammon", "name": "Artillery Witches of Mammon"},
+        {"id": "heretic-captain", "name": "Heretic Captain"},
+        {"id": "abyssal-commando", "name": "Abyssal Commando"},
+        {"id": "drowned-chorister", "name": "Drowned Chorister"},
+        {"id": "anointed-heretic-raiders", "name": "Anointed Heretic Raiders"},
+        {"id": "sea-hag", "name": "Sea Hag"},
+        {"id": "heretic-raider", "name": "Heretic Raider"},
+        {"id": "raiders-wretched", "name": "Raider's Wretched"},
+        {"id": "leviathal-chorus-chorister", "name": "Leviathal Chorus Chorister"},
+        {"id": "choir-wretched", "name": "Choir Wretched"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    },
+    {
+      "id": "cult-of-the-black-grail",
+      "name": "Cult of the Black Grail",
+      "subfactions": [
+        {"id": "dirge-of-the-great-hegemon", "name": "Dirge of the Great Hegemon"},
+        {"id": "the-great-hunger", "name": "The Great Hunger"}
+      ],
+      "units": [
+        {"id": "lord-of-tumors", "name": "Lord of Tumors"},
+        {"id": "plague-knight", "name": "Plague Knight"},
+        {"id": "corpse-guard", "name": "Corpse Guard"},
+        {"id": "amalgam", "name": "Amalgam"},
+        {"id": "grail-thrall", "name": "Grail Thrall"},
+        {"id": "fly-thrall", "name": "Fly Thrall"},
+        {"id": "herald-of-beelzebub", "name": "Herald of Beelzebub"},
+        {"id": "hounds-of-the-black-grail", "name": "Hounds of the Black Grail"},
+        {"id": "executor", "name": "Executor"},
+        {"id": "bereaved", "name": "Bereaved"},
+        {"id": "fly-bereaved", "name": "Fly Bereaved"},
+        {"id": "matagot-hag", "name": "Matagot Hag"},
+        {"id": "dessicated-husk", "name": "Dessicated Husk"},
+        {"id": "great-maw", "name": "Great Maw"},
+        {"id": "butcher-knight", "name": "Butcher Knight"},
+        {"id": "gregori-gula", "name": "Gregori Gula"},
+        {"id": "ravenous", "name": "Ravenous"},
+        {"id": "cradle-ravenous", "name": "Cradle Ravenous"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    },
+    {
+      "id": "court-of-the-seven-headed-serpent",
+      "name": "Court of the Seven-Headed Serpent",
+      "subfactions": [
+        {"id": "wrath", "name": "Wrath"},
+        {"id": "envy", "name": "Envy"},
+        {"id": "lust", "name": "Lust"},
+        {"id": "pride", "name": "Pride"},
+        {"id": "sloth", "name": "Sloth"},
+        {"id": "gluttony", "name": "Gluttony"},
+        {"id": "greed", "name": "Greed"}
+      ],
+      "units": [
+        {"id": "praetor", "name": "Praetor"},
+        {"id": "sorcerer", "name": "Sorcerer"},
+        {"id": "hell-knight", "name": "Hell Knight"},
+        {"id": "hunter-of-the-left-hand-path", "name": "Hunter of the Left-Hand Path"},
+        {"id": "desecrated-saint", "name": "Desecrated Saint"},
+        {"id": "pit-locust", "name": "Pit Locust"},
+        {"id": "wretched", "name": "Wretched"},
+        {"id": "yoke-fiend", "name": "Yoke Fiend"},
+        {"id": "misc", "name": "Misc"}
+      ]
+    },
+    {
       "id": "mercenaries",
       "name": "Mercenaries",
       "subfactions": [],
@@ -15,6 +189,7 @@
         {"id": "sin-eater", "name": "Sin Eater"},
         {"id": "sister-of-saint-cosmas", "name": "Sister of Saint Cosmas"},
         {"id": "witchburner", "name": "Witchburner"},
+        {"id": "golem", "name": "Golem"},
         {"id": "misc", "name": "Misc"}
       ]
     }
