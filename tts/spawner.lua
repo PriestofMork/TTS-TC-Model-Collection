@@ -9,7 +9,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 4
+local SPAWNER_VERSION = 5
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -192,12 +192,15 @@ local function buildXml()
 
     local fe = index and factionById[sel.f]
     if fe and importing then
-        -- Paste box. The text lives in importText (onValueChanged); re-rendering the panel
-        -- would empty the box, so status changes during the import don't touch it.
+        -- Paste box, set up like TTS Scriber's: a single-line box only draws the visible part of
+        -- its text, while a multi-line one hits Unity's ~16,000-character text limit (the paste
+        -- was cut there and TTS crashed). Line breaks are dropped on paste; JSON doesn't need
+        -- them. The text arrives once in onEndEdit and lives in importText, because
+        -- re-rendering the panel empties the box.
         row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">Paste the TTS export from Trench Companion. '
             .. 'Faction and subfaction filter above decide which models are used.</Text>')
-        row(200, '<InputField id="importBox" preferredHeight="200" fontSize="12" lineType="MultiLineNewline" '
-            .. 'characterLimit="0" onValueChanged="ui_importText"></InputField>')
+        row(40, '<InputField id="importBox" preferredHeight="40" fontSize="16" lineType="SingleLine" '
+            .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
         row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
             .. '<Button onClick="ui_importGo" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Import</Button>'
             .. '<Button onClick="ui_importCancel">Cancel</Button></HorizontalLayout>')
