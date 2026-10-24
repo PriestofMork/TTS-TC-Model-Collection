@@ -7,15 +7,18 @@
 --    same number again, or 0, clears it.
 --  * Stabilisation: rotation is frozen while the model stands, so it doesn't tip over.
 --  * Save / Load position: right-click menu; the spawner has Save all / Load all.
---  * Activation: once the model is taken off the spawner's platform, its faction icon floats
+--  * Activation: once the model is taken off the spawner's platform, its faction token floats
 --    above it. Click it to toggle ready / activated (greyed). The spawner's "Ready all"
 --    resets every model.
+--  * Dice markers: drop any die onto the model. It is replaced by a floating die of the same
+--    colour and number (colour tells blood / blessing / infection). Left-click +1,
+--    right-click -1; at 0 it disappears.
 --  * Image tokens: drop a token tagged TCUITokenSimple / TCUITokenEquipment onto the model.
 --    It shows as an icon above the model; click the icon to remove it.
---  * Floating dice: any die dropped onto the model floats beside its activation icon and
---    keeps working as a die (pick up, number keys). While the model moves the dice are locked
---    and moved along every frame; once it rests they float freely again.
---    Right-click a die -> "Remove marker", or drag it off the model to unlink it.
+--
+-- Everything above the model is object XML UI: no hitboxes, nothing to keep in place, and it
+-- moves with the model by itself. UI elements are flat, so the die is built from six faces
+-- placed and rotated in 3D, and the token from stacked layers, to look solid from any angle.
 --
 -- Ideas and faction icons from the legacy UI extender; stabilisation from Pyromaniacal's
 -- Stabilized Bases (MIT).
@@ -24,11 +27,16 @@ local MODEL_TAG     = "TCM_Model"
 local PLATFORM_NAME = "TC spawn platform"
 local TOKEN_TAGS    = {"TCUITokenSimple", "TCUITokenEquipment"}
 
-local MARKER_GAP     = 0.8    -- space between the top of the model and the bottom of a die
-local DICE_OFFSET    = 1.0    -- first die sits this far to the side, next to the activation icon
-local DICE_SPACING   = 1.1    -- distance between dice in the row
-local FOLLOW_MIN     = 30     -- frames dice follow at least after a move starts
-local RANGE_STEPS    = 64     -- points per range ring
+-- Sizes in UI units; the panel is scaled so that 100 UI units = 1 inch on any model.
+local GAP          = 40     -- between the top of the model and the markers
+local TOKEN_SIZE   = 80     -- activation token
+local TOKEN_LAYERS = 6      -- stacked layers that form the token's edge
+local TOKEN_STEP   = 2      -- depth between two layers
+local DIE_SIZE     = 50     -- edge length of a die
+local DIE_SPACING  = 60     -- distance between dice
+local ICON_SIZE    = 55     -- image tokens
+local MAX_DIE      = 6
+local RANGE_STEPS  = 64     -- points per range ring
 
 -- Faction activation icons (from the legacy UI extender). Factions without one use "default".
 local ICONS = {
@@ -42,11 +50,10 @@ local ICONS = {
 }
 
 -- f is set by the spawner (faction id). taken = has left the spawner's platform (shows the
--- activation icon). links = floating dice, each with the drag values to restore on unlink.
-state = {f = nil, savePos = nil, tokens = {}, links = {}, activated = false, taken = false}
+-- activation token). dice = {value=, color="RRGGBB"} per die marker.
+state = {f = nil, savePos = nil, tokens = {}, dice = {}, activated = false, taken = false}
 
 local typedBuffer, activeRange = "", 0
-local following, followFrames = false, 0
 
 local PLAYER_COLORS = {
     White  = {1, 1, 1},       Brown = {0.44, 0.23, 0.05}, Red    = {0.85, 0.1, 0.1},
@@ -76,15 +83,6 @@ local function modelTop()
     return b.center.y - b.size.y / 2 + h
 end
 
--- Position of die number i above the model, beside the activation icon, turned with the
--- model. dieHeight is the die's own height, so its bottom sits MARKER_GAP above the model.
-local function slotPosition(i, dieHeight)
-    local x = DICE_OFFSET + (i - 1) * DICE_SPACING
-    local offset = Vector(x, 0, 0):rotateOver("y", self.getRotation().y)
-    local p = self.getPosition()
-    return Vector(p.x + offset.x, modelTop() + MARKER_GAP + (dieHeight or 1) / 2, p.z + offset.z)
-end
-
 local function onPlatform()
     local p = self.getPosition()
     local hits = Physics.cast({origin = {p.x, p.y + 0.5, p.z}, direction = {0, -1, 0}, type = 1, max_distance = 3})
@@ -95,7 +93,7 @@ local function onPlatform()
 end
 
 -- True if pos is over this model's base and this is the closest scripted model, so a die
--- dropped between two models only links to one of them.
+-- dropped between two models only goes to one of them.
 local function isOntoMe(pos)
     local b, p = self.getBounds(), self.getPosition()
     local radius = math.max(b.size.x, b.size.z) / 2 + 0.4
@@ -112,38 +110,82 @@ local function isOntoMe(pos)
     return best == self
 end
 
--- ============ PANEL (activation icon + image tokens) ============
--- One panel above the model. The activation icon is drawn over two dark, slightly offset
--- copies of itself so it reads as a thick token instead of a flat picture. Buttons use
--- indices as ids, so token names with special characters can't break the XML, and there
--- are no tooltips (TTS draws object-UI tooltips on the ground and can leave them stuck).
+-- ============ PANEL ============
+-- Object UI: z is height in UI units (negative = up), 100 UI units per local unit. Children
+-- are placed with position="x y z" and rotation="x y z" relative to the root panel.
+local function el(tag, x, y, z, rx, ry, rz, size, attrs, inner)
+    return '<' .. tag .. ' position="' .. x .. ' ' .. y .. ' ' .. z .. '" rotation="' .. rx .. ' ' .. ry .. ' ' .. rz
+        .. '" width="' .. size .. '" height="' .. size .. '" ' .. (attrs or '') .. '>' .. (inner or '') .. '</' .. tag .. '>'
+end
+
+-- A die as a cube of six faces, each showing the number. UI faces are only drawn from the
+-- front, so every face has a back-to-back twin (rotated 180 around x) to be seen from inside
+-- or behind as well. All faces are buttons: left-click +1, right-click -1.
+local function dieXml(i, d, x)
+    local h, s = DIE_SIZE / 2, DIE_SIZE
+    local z = -h   -- cube centre: its bottom sits on the marker line
+    local r, g, b = tonumber(string.sub(d.color, 1, 2), 16), tonumber(string.sub(d.color, 3, 4), 16), tonumber(string.sub(d.color, 5, 6), 16)
+    local textColor = (r * 0.3 + g * 0.59 + b * 0.11) > 140 and "#000000" or "#FFFFFF"
+    local face = '<Button id="die:' .. i .. '" onClick="ui_die" colors="#' .. d.color .. '|#' .. d.color .. '|#' .. d.color .. '|#' .. d.color
+        .. '"><Text fontSize="34" fontStyle="Bold" color="' .. textColor .. '">' .. d.value .. '</Text></Button>'
+    local faces = {
+        {x, 0, z - h, 0, 0, 0},    {x, 0, z + h, 0, 0, 0},     -- top, bottom
+        {x, h, z, 90, 0, 0},       {x, -h, z, 90, 0, 0},       -- front, back
+        {x + h, 0, z, 0, 90, 0},   {x - h, 0, z, 0, 90, 0},    -- sides
+    }
+    local out = {}
+    for _, f in ipairs(faces) do
+        out[#out + 1] = el("Panel", f[1], f[2], f[3], f[4], f[5], f[6], s, "", face)
+        out[#out + 1] = el("Panel", f[1], f[2], f[3], f[4] + 180, f[5], f[6], s, "", face)
+    end
+    return table.concat(out)
+end
+
+-- The activation token: the faction icon on top of TOKEN_LAYERS darker copies stacked below
+-- it, which form a solid-looking edge from any angle.
+local function tokenXml()
+    local tint = state.activated and "#666666" or "#FFFFFF"
+    local out = {}
+    for k = TOKEN_LAYERS, 1, -1 do
+        local shade = k == TOKEN_LAYERS and "#000000" or "#2A2A2A"
+        out[#out + 1] = el("Image", 0, 0, k * TOKEN_STEP, 0, 0, 0, TOKEN_SIZE, 'image="act" preserveAspect="true" color="' .. shade .. '"')
+    end
+    out[#out + 1] = el("Button", 0, 0, 0, 0, 0, 0, TOKEN_SIZE, 'onClick="ui_toggleActivation" colors="#FFFFFF00|#FFFFFF00|#FFFFFF00|#FFFFFF00"',
+        '<Image image="act" preserveAspect="true" color="' .. tint .. '"/>')
+    return table.concat(out)
+end
+
+-- Layout above the model: activation token in the middle, dice to one side, image tokens to
+-- the other. The root panel undoes the model's scale, so sizes are the same on every model.
 local function renderPanel()
     local assets, parts = {}, {}
     local icon = ICONS[state.f] or ICONS.default
     if state.taken and icon then   -- setCustomAssets fails on a nil URL
         assets[#assets + 1] = {name = "act", url = icon}
-        local tint = state.activated and "#666666" or "#FFFFFF"
-        parts[#parts + 1] = '<Image image="act" width="70" height="70" offsetXY="5 -5" color="#000000AA" preserveAspect="true"/>'
-            .. '<Image image="act" width="70" height="70" offsetXY="2.5 -2.5" color="#202020DD" preserveAspect="true"/>'
-            .. '<Button onClick="ui_toggleActivation" width="70" height="70" colors="#FFFFFF00|#FFFFFF00|#FFFFFF00|#FFFFFF00">'
-            .. '<Image image="act" color="' .. tint .. '" preserveAspect="true"/></Button>'
+        parts[#parts + 1] = tokenXml()
     end
-    local n = #state.tokens
+    for i, d in ipairs(state.dice) do
+        parts[#parts + 1] = dieXml(i, d, TOKEN_SIZE / 2 + 20 + (i - 0.5) * DIE_SPACING)
+    end
     for i, t in ipairs(state.tokens) do
         if t.url and t.url ~= "" then
             assets[#assets + 1] = {name = "tok" .. i, url = t.url}
-            parts[#parts + 1] = '<Button id="tok:' .. i .. '" onClick="ui_removeToken" offsetXY="'
-                .. ((i - (n + 1) / 2) * 65) .. ' -90" width="60" height="60"'
-                .. ' colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"><Image image="tok' .. i
-                .. '" width="60" height="60" preserveAspect="true"/></Button>'
+            parts[#parts + 1] = el("Button", -(TOKEN_SIZE / 2 + 20 + (i - 0.5) * (ICON_SIZE + 8)), 0, 0, 0, 0, 0, ICON_SIZE,
+                'id="tok:' .. i .. '" onClick="ui_removeToken" colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"',
+                '<Image image="tok' .. i .. '" preserveAspect="true"/>')
         end
     end
     if #parts == 0 then
         self.UI.setXml("")
         return
     end
+    -- The root's own position is in the model's scaled local space (100 UI units per local
+    -- unit), so the world height (model top + GAP) is divided by the model's y scale.
+    local s, p = self.getScale(), self.getPosition()
+    local height = ((modelTop() - p.y) * 100 + GAP) / s.y
     self.UI.setCustomAssets(assets)
-    self.UI.setXml('<Panel position="0 -150 -250" width="400" height="400">' .. table.concat(parts) .. '</Panel>')
+    self.UI.setXml('<Panel position="0 0 ' .. -height .. '" rotation="0 0 180" width="10" height="10" scale="'
+        .. 1 / s.x .. ' ' .. 1 / s.z .. ' ' .. 1 / s.y .. '">' .. table.concat(parts) .. '</Panel>')
 end
 
 function ui_toggleActivation()
@@ -156,6 +198,24 @@ end
 function readyActivation()
     if not state.activated then return end
     state.activated = false
+    renderPanel()
+    saveState()
+end
+
+-- Dice faces have id "die:<index>". XML UI passes the mouse button as value: "-1" left, "-2" right.
+function ui_die(player, value, id)
+    local i = tonumber(string.sub(id, 5))
+    local d = i and state.dice[i]
+    if not d then return end
+    if value == "-2" then d.value = d.value - 1 else d.value = math.min(MAX_DIE, d.value + 1) end
+    if d.value <= 0 then table.remove(state.dice, i) end
+    renderPanel()
+    saveState()
+end
+
+function ui_removeToken(player, value, id)
+    local i = tonumber(string.sub(id, 5))   -- strip "tok:"
+    if i and state.tokens[i] then table.remove(state.tokens, i) end
     renderPanel()
     saveState()
 end
@@ -176,118 +236,17 @@ local function addToken(obj)
     saveState()
 end
 
-function ui_removeToken(player, value, id)
-    local i = tonumber(string.sub(id, 5))   -- strip "tok:"
-    if i and state.tokens[i] then table.remove(state.tokens, i) end
+-- A dropped die becomes a die marker with its colour and the number it shows.
+local function addDie(obj)
+    local c = obj.getColorTint()
+    local value = tonumber(obj.getValue()) or 1
+    state.dice[#state.dice + 1] = {
+        value = math.max(1, math.min(MAX_DIE, value)),
+        color = string.format("%02X%02X%02X", math.floor(c.r * 255), math.floor(c.g * 255), math.floor(c.b * 255)),
+    }
+    obj.destruct()
     renderPanel()
     saveState()
-end
-
--- ============ FLOATING DICE ============
-local function findLink(guid)
-    for i, l in ipairs(state.links) do
-        if l.guid == guid then return i end
-    end
-    return nil
-end
-
--- Dice stay normal objects (number keys, picking up); only gravity is off, and high drag
--- keeps bumps from pushing them away. Uses TTS's own use_gravity / drag members: setting the
--- Unity Rigidbody directly gets overridden by TTS.
-local function setFloating(obj, link, on)
-    if on then
-        obj.use_gravity = false
-        obj.drag = 10
-        obj.angular_drag = 10
-        obj.setVelocity({0, 0, 0})
-        obj.setAngularVelocity({0, 0, 0})
-    else
-        obj.use_gravity = true
-        obj.drag = link.drag or 0.1
-        obj.angular_drag = link.ang or 0.1
-    end
-end
-
--- Moves every linked die back into its slot and forgets dice that no longer exist.
-function snapMarkers()
-    if following then return end   -- the follow loop places them while the model moves
-    local live = {}
-    for _, l in ipairs(state.links) do
-        local o = getObjectFromGUID(l.guid)
-        if o then live[#live + 1] = {link = l, obj = o} end
-    end
-    state.links = {}
-    for i, e in ipairs(live) do
-        state.links[i] = e.link
-        setFloating(e.obj, e.link, true)
-        e.obj.setPositionSmooth(slotPosition(i, e.obj.getBoundsNormalized().size.y), false, true)
-    end
-    saveState()
-end
-
--- While the model is held, falling or moved by "Load position", its dice are locked (so
--- physics can't make them drift or flicker) and placed above it every frame. Once the model
--- rests they are unlocked and float freely again.
-local function followStep()
-    if self == nil then
-        following = false
-        return
-    end
-    followFrames = followFrames - 1
-    local moving = self.held_by_color ~= nil or not self.resting or followFrames > 0
-    local i = 0
-    for _, l in ipairs(state.links) do
-        local o = getObjectFromGUID(l.guid)
-        if o then
-            i = i + 1
-            if moving then
-                o.setPosition(slotPosition(i, o.getBoundsNormalized().size.y))
-            else
-                o.setLock(false)
-            end
-        end
-    end
-    if moving then
-        Wait.frames(followStep, 1)
-    else
-        following = false
-        snapMarkers()
-    end
-end
-
-local function startFollowing()
-    followFrames = FOLLOW_MIN
-    if following or #state.links == 0 then return end
-    following = true
-    for _, l in ipairs(state.links) do
-        local o = getObjectFromGUID(l.guid)
-        if o then o.setLock(true) end
-    end
-    Wait.frames(followStep, 1)
-end
-
-local function unlink(guid, destroy)
-    local i = findLink(guid)
-    if not i then return end
-    local l = table.remove(state.links, i)
-    local o = getObjectFromGUID(guid)
-    if o then
-        o.setLock(false)
-        if destroy then o.destruct() else setFloating(o, l, false) end
-    end
-    snapMarkers()
-end
-
-local function addRemoveMenu(obj)
-    local guid = obj.getGUID()
-    obj.addContextMenuItem("Remove marker", function() unlink(guid, true) end)
-end
-
-local function link(obj)
-    if findLink(obj.getGUID()) then snapMarkers() return end
-    state.links[#state.links + 1] = {guid = obj.getGUID(), drag = obj.drag, ang = obj.angular_drag}
-    addRemoveMenu(obj)
-    snapMarkers()
 end
 
 -- ============ RANGE RINGS ============
@@ -347,67 +306,28 @@ function loadPosition()
     if not state.savePos then return end
     self.setPositionSmooth(state.savePos.position)
     self.setRotationSmooth(state.savePos.rotation)
-    startFollowing()
 end
 
 -- ============ EVENTS ============
-function onPickUp()
-    destabilize()
-    startFollowing()
-end
+function onPickUp() destabilize() end
 
--- Global event, delivered to every object script: handles the model itself being put down,
--- dice/tokens dropped onto it, and its dice being dragged away.
+-- Global event, delivered to every object script: handles the model itself being put down
+-- and dice / image tokens dropped onto it.
 function onObjectDrop(player_color, obj)
     if obj == nil then return end
     if obj == self then
         Wait.frames(stabilize, 10)
-        startFollowing()   -- keeps the dice with the model while it falls
         Wait.time(function()
             if self == nil or state.taken or onPlatform() then return end
-            state.taken = true   -- off the spawner's platform: show the activation icon
+            state.taken = true   -- off the spawner's platform: show the activation token
             renderPanel()
             saveState()
         end, 0.5)
         return
     end
-    local linked = findLink(obj.getGUID())
-    local token = hasTokenTag(obj)
-    if not (linked or token or obj.type == "Dice") then return end
-    local onto = isOntoMe(obj.getPosition())
-    if token then
-        if onto then addToken(obj) end
-    elseif onto then
-        link(obj)
-    elseif linked then
-        unlink(obj.getGUID(), false)
-    end
-end
-
--- Number keys over a linked die: TTS's own handling puts the die down, so set the face here
--- and keep it floating. Returning true stops TTS's default.
-function onObjectNumberTyped(obj, player_color, number)
-    if obj == nil or obj.type ~= "Dice" or not findLink(obj.getGUID()) then return end
-    obj.setValue(number)
-    Wait.frames(snapMarkers, 5)
-    return true
-end
-
--- A rolled die flies off without gravity; put it back once it has its number.
-function onObjectRandomize(obj)
-    if findLink(obj.getGUID()) then Wait.time(snapMarkers, 1.5) end
-end
-
--- Linked dice get gravity back so they don't hang in the air without their model.
--- After a reload onLoad makes them float again.
-function onDestroy()
-    for _, l in ipairs(state.links) do
-        local o = getObjectFromGUID(l.guid)
-        if o then
-            o.setLock(false)
-            setFloating(o, l, false)
-        end
-    end
+    local token, die = hasTokenTag(obj), obj.type == "Dice"
+    if not (token or die) or not isOntoMe(obj.getPosition()) then return end
+    if token then addToken(obj) else addDie(obj) end
 end
 
 function onLoad(saved_data)
@@ -417,41 +337,22 @@ function onLoad(saved_data)
             for k, v in pairs(data) do state[k] = v end
         end
     end
-    state.tokens, state.links = state.tokens or {}, state.links or {}
+    state.tokens, state.dice = state.tokens or {}, state.dice or {}
     self.addTag(MODEL_TAG)
     self.max_typed_number = 1   -- every key press reaches onNumberTyped; two digits are buffered there
 
     self.addContextMenuItem("Save position", savePosition)
     self.addContextMenuItem("Load position", loadPosition)
-    self.addContextMenuItem("Unlink dice", function()
-        for _, l in ipairs(state.links) do
-            local o = getObjectFromGUID(l.guid)
-            if o then
-                o.setLock(false)
-                setFloating(o, l, false)
-            end
-        end
-        state.links = {}
-        saveState()
-    end)
-    self.addContextMenuItem("Clear tokens", function()
-        state.tokens = {}
+    self.addContextMenuItem("Clear markers", function()
+        state.tokens, state.dice = {}, {}
         renderPanel()
         saveState()
     end)
 
-    -- Other objects (and our dice) may still be loading; set things up a bit later.
+    -- The model may still be loading (bounds are needed for the panel height).
     Wait.frames(function()
         if self == nil then return end
         stabilize()
         renderPanel()
-        for _, l in ipairs(state.links) do
-            local o = getObjectFromGUID(l.guid)
-            if o then
-                o.setLock(false)   -- in case the game was saved while the model was moving
-                addRemoveMenu(o)
-            end
-        end
-        snapMarkers()
     end, 30)
 end
