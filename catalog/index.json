@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "factions": [
   {
    "id": "mercenaries",
@@ -10,8 +10,8 @@
      "id": "communicant-anti-tank-hunter",
      "name": "Communicant Anti-Tank Hunter",
      "count": 8,
-     "subs": [],
-     "any": true,
+     "any": 8,
+     "subs": {},
      "file": "units/mercenaries/communicant-anti-tank-hunter.json"
     }
    ]

@@ -238,12 +238,15 @@ def main():
             entries = [bucket[k] for k in sorted(bucket, key=lambda k: json.dumps(k))]
             rel = f"units/{f}/{unit['id']}.json"
             files[rel] = dump_unit(entries)
-            subs = sorted({s for e in entries for s in e["s"]})
+            # The spawner's subfaction filter shows any + subs[filter] models for a unit.
+            subs = {}
+            for e in entries:
+                for s in e["s"]:
+                    subs[s] = subs.get(s, 0) + 1
             index_units.append({
                 "id": unit["id"], "name": unit["name"], "count": len(entries),
-                "subs": subs,
-                # any = at least one model is usable by every subfaction (empty "s")
-                "any": any(not e["s"] for e in entries),
+                "any": sum(1 for e in entries if not e["s"]),  # usable by every subfaction
+                "subs": dict(sorted(subs.items())),            # subfaction id -> model count
                 "file": rel,
             })
             summary.append(f"  {faction['name']} / {unit['name']}: {len(entries)}")

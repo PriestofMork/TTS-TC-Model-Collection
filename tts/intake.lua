@@ -32,10 +32,11 @@ local MODEL_NAMES = {Custom_Model = true, Custom_Assetbundle = true, Figurine_Cu
 
 local BATCH_SIZE = 10   -- models moved into a bag per frame
 
--- Object XML UI lies on the object's top face. Its z is "height above the object" (negative
--- = up) in UI units; -11 sits just above a scale-1 tile. Raise it for thicker objects.
-local UI_Z     = -11
-local UI_SCALE = 1
+-- Object XML UI is positioned from the object's centre; its z is height (negative = up) in
+-- UI units (100 per local unit). The panel is lifted to the top face automatically, plus
+-- this margin in UI units.
+local UI_MARGIN = 5
+local UI_SCALE  = 1
 
 local COLOR_NEW   = {0.2, 1, 0.2}
 local COLOR_RETAG = {1, 0.8, 0.1}
@@ -75,6 +76,13 @@ end
 local function toWorld(x, z)
     local s = self.getScale()
     return self.positionToWorld(Vector(x / s.x, 0, z / s.z))
+end
+
+-- Panel z that puts the UI just above the object's top face, whatever its shape and scale.
+-- getBoundsNormalized ignores rotation but includes scale, so divide scale out to get local units.
+local function uiHeight()
+    local halfLocal = self.getBoundsNormalized().size.y / 2 / self.getScale().y
+    return -math.ceil(halfLocal * 100 + UI_MARGIN)
 end
 
 local function tableY()
@@ -151,7 +159,7 @@ local function buildXml()
 
     add('<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/>'
         .. '<Toggle fontSize="16" textColor="#FFFFFF"/><Dropdown fontSize="18"/></Defaults>')
-    add('<Panel position="0 0 ' .. UI_Z .. '" rotation="0 0 180" width="520" height="720" scale="'
+    add('<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="520" height="720" scale="'
         .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">')
     add('<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">')
     add('<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Intake</Text>')

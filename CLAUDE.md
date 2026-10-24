@@ -95,12 +95,13 @@ catalog/                    GENERATED, do not edit by hand
     {"id": "heretic-legion", "name": "Heretic Legion",
      "subfactions": [{"id": "knights-of-avarice", "name": "Knights of Avarice"}],
      "units": [{"id": "death-commando", "name": "Death Commando", "count": 14,
-                "subs": ["knights-of-avarice"], "file": "units/heretic-legion/death-commando.json"}]}
+                "any": 10, "subs": {"knights-of-avarice": 4},
+                "file": "units/heretic-legion/death-commando.json"}]}
   ]
 }
 ```
 
-Keep it small. It is decoded on every load.
+Keep it small. It is decoded on every load. `any` is the number of models with empty `s` (usable by every subfaction), `subs` maps subfaction id to model count, so the spawner shows `any + subs[filter]` under a filter.
 
 ### catalog/units/<faction>/<unit>.json (generated)
 
@@ -211,4 +212,6 @@ This is the published object. It must work when spawned anywhere and at any rota
 - Legacy scripts are a source of ideas only, not the reference implementation.
 - Intake stores models in one bag per unit (not a grid), found by a `{"tcbag":1,"f":..,"u":..}` marker in the bag's GM Notes.
 - Model structure in practice: the tagged top-level object is usually the **base**, with the sculpt attached as a `ChildObject` (occasionally the base is part of the sculpt mesh). Many models share the same base, so duplicate detection keys on the whole assembly: the object's own mesh/texture/scale plus all attached parts, recursively.
-- Export details beyond the spec above: `ChildObjects` (the attached sculpts/parts) are kept and stripped recursively, as are `States`. `Nickname` is replaced by the unit name (source nicknames are often stat blocks). `rotY` is reset to 0 (w/d swapped if the model was turned sideways) so all models face their mesh forward. `Locked` is set to false. Index units carry `"any": true` when at least one model has empty `s`. Empty `s` may arrive as `[]` or `{}`.
+- Export details beyond the spec above: `ChildObjects` (the attached sculpts/parts) are kept and stripped recursively, as are `States`. `Nickname` is replaced by the unit name (source nicknames are often stat blocks). `rotY` is reset to 0 (w/d swapped if the model was turned sideways) so all models face their mesh forward. `Locked` is set to false. Empty `s` may arrive as `[]` or `{}`.
+- Object XML UI z is height in UI units (100 per local unit). Both scripts compute it from `getBoundsNormalized()` so the panel sits on top of whatever object they're on.
+- Spawner menu: clicking a unit toggles it (spawn / remove), instead of select + "Spawn unit". Spawned objects get tag `TCM_Spawned` and memo `<token>|<faction>/<unit>`, where the token is a random id in the spawner's saved state (survives GUID changes). Rows are not compacted when one unit is removed; the layout resets once everything is cleared. Self-update is already in (with a guard: the fetched script must contain `SPAWNER_VERSION = <announced version>`, otherwise it would reload forever).
