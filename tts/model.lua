@@ -13,6 +13,8 @@
 --  * Dice: drop any die onto the model. The real die stays, locked, floating beside the
 --    activation token, and moves with the model. Hover it and press 1-6 to turn it to that
 --    face; press 0 to take it off (it lands beside the model as a normal die).
+--  * Swapping (warband members only): drop a catalog model of the same unit onto a warband
+--    model; the dropped model takes over its name, rules, activation, dice and place.
 --  * Image tokens: drop a token tagged TCUITokenSimple / TCUITokenEquipment onto the model.
 --    It shows as an icon above the model; click the icon to remove it.
 --
@@ -53,7 +55,9 @@ local ICONS = {
 
 -- f is set by the spawner (faction id). taken = has left the spawner's platform (shows the
 -- activation token). dice = GUIDs of the linked dice, in row order.
-state = {f = nil, savePos = nil, tokens = {}, dice = {}, activated = false, taken = false}
+-- u is the unit id and member = true for warband members (imported, or put on a warband slot);
+-- both are set by the spawner or a slot.
+state = {f = nil, u = nil, member = false, savePos = nil, tokens = {}, dice = {}, activated = false, taken = false}
 
 local typedBuffer, activeRange = "", 0
 local following, followFrames = false, 0
@@ -104,14 +108,14 @@ end
 
 -- True if pos is over this model's base and this is the closest scripted model, so a die
 -- dropped between two models only goes to one of them.
-local function isOntoMe(pos)
+local function isOntoMe(pos, ignore)
     local b, p = self.getBounds(), self.getPosition()
     local radius = math.max(b.size.x, b.size.z) / 2 + 0.4
     local dx, dz = pos.x - p.x, pos.z - p.z
     if dx * dx + dz * dz > radius * radius or pos.y < b.center.y - b.size.y / 2 - 0.2 then return false end
     local best, bestD = nil, math.huge
     for _, o in ipairs(getAllObjects()) do
-        if o.hasTag(MODEL_TAG) then
+        if o.hasTag(MODEL_TAG) and o ~= ignore then
             local op = o.getPosition()
             local d = (op.x - pos.x) ^ 2 + (op.z - pos.z) ^ 2
             if d < bestD then best, bestD = o, d end
@@ -399,8 +403,57 @@ function onPickUp()
     startFollowing()
 end
 
+-- A warband slot made this model a warband member (it already set name and description).
+function becomeMember(params)
+    state.member = true
+    state.f = params.f or state.f
+    state.u = params.u or state.u
+    renderPanel()
+    saveState()
+end
+
+-- Swap: this model replaces a warband member. It takes over the member's name, rules,
+-- activation, tokens and dice, and its place on the table.
+function adoptMember(params)
+    local p = params.state
+    state.f, state.u, state.member = p.f, p.u, true
+    state.activated, state.taken, state.tokens = p.activated, true, p.tokens or {}
+    state.dice = p.dice or {}
+    self.setName(params.name)
+    self.setDescription(params.desc)
+    self.setPositionSmooth(params.pos, false, true)
+    self.setRotationSmooth(params.rot, false, true)
+    for _, g in ipairs(state.dice) do
+        local o = getObjectFromGUID(g)
+        if o then o.memo = self.getGUID() end   -- the die's script finds its model by this
+    end
+    renderPanel()
+    saveState()
+    startFollowing()   -- carries the dice to the new place
+end
+
+-- A catalog model of the same unit dropped onto this warband member replaces it. Only a
+-- model that isn't a member itself can replace one, so two members bumping into each other
+-- never swap.
+local function trySwap(obj)
+    if not state.member or not state.u or not obj.hasTag(MODEL_TAG) then return false end
+    local other = obj.getTable("state")
+    if type(other) ~= "table" or other.member or other.u ~= state.u then return false end
+    if not isOntoMe(obj.getPosition(), obj) then return false end
+    obj.call("adoptMember", {
+        name = self.getName(), desc = self.getDescription(),
+        pos = self.getPosition(), rot = self.getRotation(),
+        state = {f = state.f, u = state.u, activated = state.activated, tokens = state.tokens, dice = state.dice},
+    })
+    state.dice = {}   -- handed over: onDestroy must not unlock them
+    saveState()
+    self.destruct()
+    return true
+end
+
 -- Global event, delivered to every object script: handles the model itself being put down,
--- dice / image tokens dropped onto it, and its dice being dragged off (after pressing L).
+-- dice / image tokens dropped onto it, a replacement model dropped onto it, and its dice
+-- being dragged off (after pressing L).
 function onObjectDrop(player_color, obj)
     if obj == nil then return end
     if obj == self then
@@ -414,6 +467,7 @@ function onObjectDrop(player_color, obj)
         end, 0.5)
         return
     end
+    if trySwap(obj) then return end
     local mine = findDie(obj.getGUID())
     local token, die = hasTokenTag(obj), obj.type == "Dice"
     if not (mine or token or die) then return end

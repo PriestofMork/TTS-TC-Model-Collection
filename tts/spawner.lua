@@ -9,7 +9,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 6
+local SPAWNER_VERSION = 7
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -208,7 +208,8 @@ local function buildXml()
         row(40, '<InputField id="importBox" preferredHeight="40" fontSize="16" lineType="SingleLine" '
             .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
         row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
-            .. '<Button onClick="ui_importGo" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Import</Button>'
+            .. '<Button onClick="ui_importModels" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn models</Button>'
+            .. '<Button onClick="ui_importSlots" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn slots</Button>'
             .. '<Button onClick="ui_importCancel">Cancel</Button></HorizontalLayout>')
     elseif fe then
         local opts = {}
@@ -323,7 +324,7 @@ local function flushQueue(done)
     Wait.frames(runQueue, 1)
 end
 
-local function spawnLabel(text, pos, memo)
+local function spawnLabel(text, pos, memo, fontSize)
     local yaw = self.getRotation().y
     spawnObject({
         type     = "3DText",
@@ -331,22 +332,28 @@ local function spawnLabel(text, pos, memo)
         rotation = {LABEL_PITCH, yaw + LABEL_YAW, 0},
         callback_function = function(obj)
             obj.TextTool.setValue(text)
-            obj.TextTool.setFontSize(LABEL_FONT)
+            obj.TextTool.setFontSize(fontSize or LABEL_FONT)
             obj.memo = memo
             obj.addTag(SPAWN_TAG)
         end,
     })
 end
 
-local function spawnModel(data, pos, memo, f)
+-- state: the model script's starting state ({f = faction for the activation icon, u = unit
+-- id for swapping, member = true for warband members}). raw: the data brings its own script
+-- (warband slots) and is spawned as is. size: rescale to {x, z} once spawned (slots are
+-- plain blocks whose native size isn't known up front).
+local function spawnModel(data, pos, memo, state, raw, size)
     local t = data.Transform or {}
-    -- The model script and its starting state (faction, for the activation icon) go into the data, so no "extend" step is needed. The data is
-    -- cached per unit, so both are set (or cleared) on every spawn.
-    if scriptsOn and modelScript then
-        data.LuaScript = modelScript
-        data.LuaScriptState = JSON.encode({f = f})
-    else
-        data.LuaScript, data.LuaScriptState = nil, nil
+    -- The model script and its starting state go into the data, so no "extend" step is
+    -- needed. The data is cached per unit, so both are set (or cleared) on every spawn.
+    if not raw then
+        if scriptsOn and modelScript then
+            data.LuaScript = modelScript
+            data.LuaScriptState = JSON.encode(state or {})
+        else
+            data.LuaScript, data.LuaScriptState = nil, nil
+        end
     end
     -- Tag and memo go into the data before spawning and are set again once the object exists,
     -- in case spawnObjectData ignores either field.
@@ -364,6 +371,10 @@ local function spawnModel(data, pos, memo, f)
         callback_function = function(obj)
             obj.memo = memo
             if not obj.hasTag(SPAWN_TAG) then obj.addTag(SPAWN_TAG) end
+            if size then
+                local b, sc = obj.getBoundsNormalized().size, obj.getScale()
+                obj.setScale({sc.x * size[1] / b.x, sc.y * 0.1 / b.y, sc.z * size[2] / b.z})
+            end
         end,
     })
 end
@@ -396,9 +407,9 @@ local function spawnPlatform(pos, width, depth, memo)
 end
 
 -- Lays out one block on its own platform: a label, then rows of models wrapped at
--- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {data=, w=, d=, f=}; w/d come
--- from the intake because bounds aren't known before the models load, f is the faction the
--- model script gets (activation icon).
+-- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {data=, w=, d=, state=, raw=,
+-- size=, label=} (see spawnModel; label = small text on the item); w/d come from the intake
+-- because bounds aren't known before the models load.
 local function queueBlock(key, label, items)
     local memo = token .. "|" .. key
     if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the panel again
@@ -421,8 +432,12 @@ local function queueBlock(key, label, items)
         if rowWidth > widest then widest = rowWidth end
         for _, item in ipairs(row) do
             local pos = layoutToWorld(item.x - rowWidth / 2, zc, top + SPAWN_HEIGHT)
-            local data, f = item.data, item.f
-            jobs[#jobs + 1] = function() spawnModel(data, pos, memo, f) end
+            local it = item.item
+            jobs[#jobs + 1] = function() spawnModel(it.data, pos, memo, it.state, it.raw, it.size) end
+            if it.label then
+                local lpos = layoutToWorld(item.x - rowWidth / 2, zc, top + 0.35)
+                jobs[#jobs + 1] = function() spawnLabel(it.label, lpos, memo, 18) end
+            end
         end
         z = z + rowDepth + ROW_GAP
         x, rowDepth, row = 0, 0, {}
@@ -431,7 +446,7 @@ local function queueBlock(key, label, items)
     for _, item in ipairs(items) do
         local w, d = item.w or 1.5, item.d or 1.5
         if #row > 0 and x + w > MAX_ROW_WIDTH then flushRow() end
-        row[#row + 1] = {data = item.data, f = item.f, x = x + w / 2}
+        row[#row + 1] = {item = item, x = x + w / 2}
         x = x + w + MODEL_PAD
         if d > rowDepth then rowDepth = d end
     end
@@ -454,7 +469,9 @@ end
 
 local function queueUnit(f, unit, entries)
     local items = {}
-    for _, e in ipairs(entries) do items[#items + 1] = {data = e.data, w = e.w, d = e.d, f = f} end
+    for _, e in ipairs(entries) do
+        items[#items + 1] = {data = e.data, w = e.w, d = e.d, state = {f = f, u = unit.id}}
+    end
     queueBlock(unitKey(f, unit.id), unit.name .. " (" .. #entries .. ")", items)
 end
 
@@ -623,11 +640,46 @@ local function describe(m)
     return table.concat(lines, "\n")
 end
 
+-- Warband slot: a flat locked tile that holds one member's name and description. Any model
+-- put on it gets them (and, if it runs the model script, becomes that member: activation,
+-- swapping). Used to dress models a player picked themselves, or to update existing ones.
+local SLOT_SCRIPT = [[
+-- TC Miniatures warband slot: put a model on this tile and it becomes this warband member.
+function onLoad(saved_data)
+    member = (saved_data ~= "" and JSON.decode(saved_data)) or {}
+end
+
+function onObjectDrop(player_color, obj)
+    if obj == nil or obj == self or obj.type == "Dice" or obj.name == "3DText" or not member.name then return end
+    local p, c = obj.getPosition(), self.getPosition()
+    local r = math.max(self.getBounds().size.x, self.getBounds().size.z) / 2 + 0.2
+    if (p.x - c.x) ^ 2 + (p.z - c.z) ^ 2 > r * r then return end
+    obj.setName(member.name)
+    obj.setDescription(member.desc)
+    if obj.hasTag("TCM_Model") then obj.call("becomeMember", {f = member.f, u = member.u}) end
+    self.setColorTint({0.2, 0.45, 0.2})   -- filled
+end
+]]
+
+local function slotData(name, desc, f, u, shortName)
+    return {
+        Name = "BlockSquare",
+        Nickname = shortName,
+        Transform = {posX = 0, posY = 0, posZ = 0, rotX = 0, rotY = 0, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1},
+        ColorDiffuse = {r = 0.3, g = 0.3, b = 0.3},
+        Locked = true,
+        LuaScript = SLOT_SCRIPT,
+        LuaScriptState = JSON.encode({name = name, desc = desc, f = f, u = u}),
+    }
+end
+
 -- Spawns a whole warband on one platform labelled with its name. Each warband member gets a
 -- catalog model of its unit; copies of the same unit get different models where the catalog
 -- has several. The subfaction filter applies to the selected faction's units. Mercenaries get
 -- the warband's faction for their activation icon.
-local function importWarband(warband, done)
+-- mode "models": catalog models, picked from the import set of the chosen subfaction (or
+-- "_" = vanilla) where the maintainer defined one. mode "slots": one slot per member instead.
+local function importWarband(warband, mode, done)
     local members, missing, order = {}, {}, {}
     local factionVotes = {}
     for _, m in ipairs(warband.models or {}) do
@@ -655,29 +707,42 @@ local function importWarband(warband, done)
             units[#units + 1] = mb.hit
         end
     end
+    if mode == "slots" then units = {} end   -- slots don't need any catalog models
     local entriesByKey, i = {}, 0
     local function finish()
         local items, used = {}, {}
         for _, mb in ipairs(members) do
-            local key = unitKey(mb.hit.f, mb.hit.unit.id)
-            local list = {}
-            for _, e in ipairs(entriesByKey[key] or {}) do
+            local key, uid = unitKey(mb.hit.f, mb.hit.unit.id), mb.hit.unit.id
+            local name, desc = nameBlock(mb.m), describe(mb.m)
+            if mode == "slots" then
+                items[#items + 1] = {data = slotData(name, desc, warbandFaction, uid, tostring(mb.m.name)),
+                                     w = 1.4, d = 1.4, raw = true, size = {1.3, 1.3}, label = tostring(mb.m.name)}
+            else
                 -- The subfaction filter only means something for the selected faction's units.
-                if mb.hit.f ~= sel.f or entryMatches(e) then list[#list + 1] = e end
-            end
-            if #list == 0 then list = entriesByKey[key] or {} end
-            if #list > 0 then
-                used[key] = (used[key] or 0) + 1
-                local e = list[(used[key] - 1) % #list + 1]
-                local data = JSON.decode(JSON.encode(e.data))   -- own copy: name/description differ
-                data.Nickname = nameBlock(mb.m)
-                data.Description = describe(mb.m)
-                items[#items + 1] = {data = data, w = e.w, d = e.d, f = warbandFaction}
+                local set = (mb.hit.f == sel.f and sel.sub) or "_"
+                local all, inSet, fits = entriesByKey[key] or {}, {}, {}
+                for _, e in ipairs(all) do
+                    for _, i in ipairs(e.i or {}) do
+                        if i == set then inSet[#inSet + 1] = e break end
+                    end
+                    if mb.hit.f ~= sel.f or entryMatches(e) then fits[#fits + 1] = e end
+                end
+                local list = (#inSet > 0 and inSet) or (#fits > 0 and fits) or all
+                if #list > 0 then
+                    used[key] = (used[key] or 0) + 1
+                    local e = list[(used[key] - 1) % #list + 1]
+                    local data = JSON.decode(JSON.encode(e.data))   -- own copy: name/description differ
+                    data.Nickname = name
+                    data.Description = desc
+                    items[#items + 1] = {data = data, w = e.w, d = e.d,
+                                         state = {f = warbandFaction, u = uid, member = true}}
+                end
             end
         end
         if #items > 0 then
             local name = tostring(warband["warband-name"] or "Warband")
-            queueBlock("warband/" .. tostring(warband["warband-id"] or name), name, items)
+            queueBlock("warband/" .. tostring(warband["warband-id"] or name) .. "/" .. mode,
+                name .. (mode == "slots" and " - slots" or ""), items)
         end
         flushQueue(function() done(#items, order, missing) end)
     end
@@ -939,7 +1004,7 @@ end
 
 function ui_importText(player, value) importText = value or "" end
 
-function ui_importGo()
+local function importGo(mode)
     if busy then return end
     local warband = decodeWarband(importText)
     if not warband or #warband.models == 0 then
@@ -948,9 +1013,11 @@ function ui_importGo()
         return
     end
     importing, importText, busy = false, "", true
-    importWarband(warband, function(n, order, missing)
+    importWarband(warband, mode, function(n, order, missing)
         busy = false
-        local text = "Imported " .. n .. " model(s) of " .. tostring(warband["warband-name"]) .. "."
+        local text = (mode == "slots" and ("Spawned " .. n .. " slot(s) for ") or ("Imported " .. n .. " model(s) of "))
+            .. tostring(warband["warband-name"]) .. "."
+        if mode == "slots" then text = text .. " Put a model on each slot to give it that member's name and rules." end
         if #order > 0 then
             local parts = {}
             for _, name in ipairs(order) do parts[#parts + 1] = name .. (missing[name] > 1 and (" x" .. missing[name]) or "") end
@@ -959,6 +1026,9 @@ function ui_importGo()
         setStatus(text)
     end)
 end
+
+function ui_importModels() importGo("models") end
+function ui_importSlots() importGo("slots") end
 
 function ui_toggleScripts()
     scriptsOn = not scriptsOn

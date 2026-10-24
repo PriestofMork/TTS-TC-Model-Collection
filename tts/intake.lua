@@ -45,7 +45,9 @@ local COLOR_BAD   = {1, 0.2, 0.2}
 
 local config       = nil        -- decoded units.json
 local factionIndex = {}         -- faction id -> {faction=, index=, units={id->unit}, unitIndex={id->n}, subs={id->sub}}
-local sel          = {f = nil, u = nil, s = {}}   -- s is a set: subfaction id -> true
+-- s: set of subfaction ids the model fits (none = any). imp: set of import sets the model
+-- belongs to ("_" = vanilla, else a subfaction id): a warband import only picks from these.
+local sel          = {f = nil, u = nil, s = {}, imp = {}}
 local status       = "Loading config..."
 local busy         = false
 local renderPending = false
@@ -126,7 +128,7 @@ local function tagValid(t)
     return true
 end
 
-local function tagLabel(f, u, subs)
+local function tagLabel(f, u, subs, imp)
     local fe = factionIndex[f]
     local fname = fe and fe.faction.name or tostring(f)
     local uname = (fe and fe.units[u]) and fe.units[u].name or tostring(u)
@@ -139,6 +141,13 @@ local function tagLabel(f, u, subs)
         label = label .. " [" .. table.concat(names, ", ") .. "]"
     else
         label = label .. " (any subfaction)"
+    end
+    if imp and #imp > 0 then
+        local names = {}
+        for _, id in ipairs(imp) do
+            names[#names + 1] = id == "_" and "Vanilla" or ((fe and fe.subs[id]) and fe.subs[id].name or tostring(id))
+        end
+        label = label .. " - import: " .. table.concat(names, ", ")
     end
     return label
 end
@@ -200,6 +209,18 @@ local function buildXml()
             row(subRows * 34, '<GridLayout cellSize="240 30" spacing="4 4" preferredHeight="' .. (subRows * 34) .. '">'
                 .. table.concat(t) .. '</GridLayout>')
         end
+
+        -- Import sets: which warband imports may use this model (Vanilla = no subfaction chosen).
+        row(24, '<Text preferredHeight="24" alignment="MiddleLeft">Import set (used by warband import)</Text>')
+        local sets = {{id = "_", name = "Vanilla"}}
+        for _, sf in ipairs(subs) do sets[#sets + 1] = sf end
+        local t, setRows = {}, math.ceil(#sets / 2)
+        for _, st in ipairs(sets) do
+            t[#t + 1] = '<Toggle id="imp:' .. xmlEscape(st.id) .. '" isOn="' .. (sel.imp[st.id] and 'true' or 'false')
+                .. '" onValueChanged="ui_imp">' .. xmlEscape(st.name) .. '</Toggle>'
+        end
+        row(setRows * 34, '<GridLayout cellSize="240 30" spacing="4 4" preferredHeight="' .. (setRows * 34) .. '">'
+            .. table.concat(t) .. '</GridLayout>')
 
         row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
             .. '<Button onClick="ui_preview">Preview</Button>'
@@ -272,6 +293,9 @@ local function applyConfig(text)
     if not factionIndex[sel.f] then sel.f, sel.u, sel.s = data.factions[1].id, nil, {} end
     local fe = factionIndex[sel.f]
     if sel.u and not fe.units[sel.u] then sel.u = nil end
+    for id in pairs(sel.imp) do
+        if id ~= "_" and not fe.subs[id] then sel.imp[id] = nil end
+    end
     for sid in pairs(sel.s) do
         if not fe.subs[sid] then sel.s[sid] = nil end
     end
@@ -334,7 +358,7 @@ end
 
 local function selectionLabel()
     if not sel.u then return nil end
-    return tagLabel(sel.f, sel.u, sortedKeys(sel.s))
+    return tagLabel(sel.f, sel.u, sortedKeys(sel.s), sortedKeys(sel.imp))
 end
 
 -- Highlights the zone contents and describes them. autoSelect (from a drop) implements the
@@ -357,7 +381,7 @@ local function preview(autoSelect, droppedObj)
         if it.tag then
             tagged = tagged + 1
             if not tagValid(it.tag) then invalid = invalid + 1 end
-            local label = tagLabel(it.tag.f, it.tag.u, it.tag.s)
+            local label = tagLabel(it.tag.f, it.tag.u, it.tag.s, it.tag.i)
             if not groups[label] then groups[label] = 0; order[#order + 1] = label end
             groups[label] = groups[label] + 1
             highlight(it.obj, tagValid(it.tag) and COLOR_RETAG or COLOR_BAD)
@@ -368,8 +392,9 @@ local function preview(autoSelect, droppedObj)
 
     if autoSelect and #items > 0 and tagged == #items and #order == 1 and invalid == 0 then
         local t = items[1].tag
-        sel.f, sel.u, sel.s = t.f, t.u, {}
+        sel.f, sel.u, sel.s, sel.imp = t.f, t.u, {}, {}
         for _, sid in ipairs(t.s or {}) do sel.s[sid] = true end
+        for _, id in ipairs(t.i or {}) do sel.imp[id] = true end
         render()
     end
 
@@ -435,10 +460,12 @@ local function ensureBag(f, u, callback)
 end
 
 -- ============ SUBMIT ============
-local function tagObject(obj, f, u, subs)
+local function tagObject(obj, f, u, subs, imp)
     -- Bounds are not in the save JSON; the spawner needs the footprint before models load.
     local size = obj.getBounds().size
-    obj.setGMNotes(JSON.encode({tc = 1, f = f, u = u, s = subs, w = round(size.x, 2), d = round(size.z, 2)}))
+    local tag = {tc = 1, f = f, u = u, s = subs, w = round(size.x, 2), d = round(size.z, 2)}
+    if #imp > 0 then tag.i = imp end
+    obj.setGMNotes(JSON.encode(tag))
     -- Only the stored script changes here; the running copy dies when the object enters the bag.
     obj.setLuaScript("")
     obj.script_state = ""
@@ -458,8 +485,8 @@ local function submit()
 
     busy = true
     clearHighlights()
-    local f, u, subs = sel.f, sel.u, sortedKeys(sel.s)
-    local label = tagLabel(f, u, subs)
+    local f, u, subs, imp = sel.f, sel.u, sortedKeys(sel.s), sortedKeys(sel.imp)
+    local label = tagLabel(f, u, subs, imp)
     local total = #items
     setStatus("Tagging " .. total .. " model(s) as " .. label .. "...")
 
@@ -470,7 +497,7 @@ local function submit()
                 if #items == 0 then break end
                 local it = table.remove(items, 1)
                 if it.obj ~= nil then
-                    tagObject(it.obj, f, u, subs)
+                    tagObject(it.obj, f, u, subs, imp)
                     bag.putObject(it.obj)
                 end
             end
@@ -539,7 +566,7 @@ end
 function ui_faction(player, value)
     for _, f in ipairs(config.factions) do
         if f.name == value and f.id ~= sel.f then
-            sel.f, sel.u, sel.s = f.id, nil, {}
+            sel.f, sel.u, sel.s, sel.imp = f.id, nil, {}, {}
             render()
             break
         end
@@ -560,13 +587,18 @@ function ui_sub(player, value, id)
 end
 
 function ui_preview() preview(false) end
+function ui_imp(player, value, id)
+    sel.imp[string.sub(id, 5)] = (value == "True") or nil   -- strip "imp:"
+    preview(false)
+end
+
 function ui_submit() submit() end
 function ui_unsorted() checkUnsorted() end
 
 function ui_reload() loadConfig() end
 
 function ui_clear()
-    sel.u, sel.s = nil, {}
+    sel.u, sel.s, sel.imp = nil, {}, {}
     clearHighlights()
     status = "Selection cleared."
     render()
@@ -585,7 +617,7 @@ function onObjectDrop(player_color, obj)
 end
 
 function onSave()
-    return JSON.encode({sel = {f = sel.f, u = sel.u, s = sortedKeys(sel.s)}})
+    return JSON.encode({sel = {f = sel.f, u = sel.u, s = sortedKeys(sel.s), imp = sortedKeys(sel.imp)}})
 end
 
 function onLoad(saved_data)
@@ -594,6 +626,8 @@ function onLoad(saved_data)
         if ok and type(data) == "table" and data.sel then
             sel.f, sel.u, sel.s = data.sel.f, data.sel.u, {}
             for _, sid in ipairs(data.sel.s or {}) do sel.s[sid] = true end
+            sel.imp = {}
+            for _, id in ipairs(data.sel.imp or {}) do sel.imp[id] = true end
         end
     end
     drawZone()

@@ -60,7 +60,8 @@ def load_config():
 
 
 def validate(tag, lookup):
-    """Return (faction_id, unit_id, subs, w, d) or raise ValueError with the reason."""
+    """Return (faction_id, unit_id, subs, imp, w, d) or raise ValueError with the reason.
+    imp = import sets the model belongs to: "_" (vanilla) and/or subfaction ids."""
     f, u = tag.get("f"), tag.get("u")
     entry = lookup.get(f)
     if not entry:
@@ -73,10 +74,14 @@ def validate(tag, lookup):
     unknown = [s for s in subs if s not in entry["subs"]]
     if unknown:
         raise ValueError(f"unknown subfaction(s) {unknown} in faction '{f}'")
+    imp = tag.get("i") or []
+    bad_imp = [i for i in imp if i != "_" and i not in entry["subs"]]
+    if bad_imp:
+        raise ValueError(f"unknown import set(s) {bad_imp} in faction '{f}'")
     w, d = tag.get("w"), tag.get("d")
     if not all(isinstance(v, (int, float)) and v > 0 for v in (w, d)):
         raise ValueError("missing or invalid footprint w/d (re-tag it in the intake)")
-    return f, u, sorted(set(subs)), float(w), float(d)
+    return f, u, sorted(set(subs)), sorted(set(imp)), float(w), float(d)
 
 
 # ---------------------------------------------------------------- cleaning
@@ -198,7 +203,7 @@ def main():
         name = (obj.get("Nickname") or obj.get("Name") or "").splitlines()[0] if (obj.get("Nickname") or obj.get("Name")) else "?"
         label = f"'{name}' ({obj.get('GUID', '?')})"
         try:
-            f, u, subs, w, d = validate(tag, lookup)
+            f, u, subs, imp, w, d = validate(tag, lookup)
         except ValueError as err:
             warnings.append(f"SKIPPED {label}: {err}")
             continue
@@ -206,6 +211,8 @@ def main():
         key = dedupe_key(obj)
         data, w, d = clean(json.loads(json.dumps(obj)), lookup[f]["units"][u]["name"], w, d)
         entry = {"s": subs, "w": round(w, 2), "d": round(d, 2), "data": data}
+        if imp:
+            entry["i"] = imp   # import sets (see validate)
         bucket = units.setdefault((f, u), {})
         if key is None:
             warnings.append(f"no mesh/asset URL on {label}; kept without duplicate check")
@@ -214,6 +221,8 @@ def main():
             # Same model tagged twice for this unit: keep one, widen its subfactions.
             kept = bucket[key]
             kept["s"] = [] if not kept["s"] or not subs else sorted(set(kept["s"]) | set(subs))
+            if imp:
+                kept["i"] = sorted(set(kept.get("i", [])) | set(imp))
             warnings.append(f"duplicate in {f}/{u}: {label} (asset {short_key(key)})")
         else:
             bucket[key] = entry
