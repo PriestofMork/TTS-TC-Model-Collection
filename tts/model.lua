@@ -7,32 +7,46 @@
 --    same number again, or 0, clears it.
 --  * Stabilisation: rotation is frozen while the model stands, so it doesn't tip over.
 --  * Save / Load position: right-click menu; the spawner has Save all / Load all.
+--  * Activation: once the model is taken off the spawner's platform, its faction icon floats
+--    above it. Click it to toggle ready / activated (greyed). The spawner's "Ready all"
+--    resets every model.
 --  * Image tokens: drop a token tagged TCUITokenSimple / TCUITokenEquipment onto the model.
 --    It shows as an icon above the model; click the icon to remove it.
---  * Floating markers: once the model is taken off the spawner's platform it gets its
---    faction's activation token floating above it; any multi-state token dropped onto it
---    links as its activation token too. Any die dropped onto the model floats next to that
---    token. Markers are attached to the model while it moves and float freely while it stands.
+--  * Floating dice: any die dropped onto the model floats beside its activation icon and
+--    keeps working as a die (pick up, number keys). While the model moves the dice are locked
+--    and moved along every frame; once it rests they float freely again.
 --    Right-click a die -> "Remove marker", or drag it off the model to unlink it.
 --
--- Ideas from the legacy UI extender; stabilisation from Pyromaniacal's Stabilized Bases (MIT).
+-- Ideas and faction icons from the legacy UI extender; stabilisation from Pyromaniacal's
+-- Stabilized Bases (MIT).
 
-local RAW_BASE       = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
-local MODEL_TAG      = "TCM_Model"
-local ACTIVATION_TAG = "TCM_Activation"
-local PLATFORM_NAME  = "TC spawn platform"
-local TOKEN_TAGS     = {"TCUITokenSimple", "TCUITokenEquipment"}
+local MODEL_TAG     = "TCM_Model"
+local PLATFORM_NAME = "TC spawn platform"
+local TOKEN_TAGS    = {"TCUITokenSimple", "TCUITokenEquipment"}
 
-local MARKER_GAP     = 0.8    -- space between the top of the model and the bottom of a marker
-local MARKER_SPACING = 1.1    -- distance between dice in the row
-local DICE_OFFSET    = 1.0    -- first die sits this far to the side of the activation token
+local MARKER_GAP     = 0.8    -- space between the top of the model and the bottom of a die
+local DICE_OFFSET    = 1.0    -- first die sits this far to the side, next to the activation icon
+local DICE_SPACING   = 1.1    -- distance between dice in the row
+local FOLLOW_MIN     = 30     -- frames dice follow at least after a move starts
 local RANGE_STEPS    = 64     -- points per range ring
 
--- f / cv are set by the spawner (faction id, catalog version). links = floating markers,
--- activation token first; each keeps the drag values to restore when it is unlinked.
-state = {f = nil, cv = nil, savePos = nil, tokens = {}, links = {}, activation = nil, asked = false}
+-- Faction activation icons (from the legacy UI extender). Factions without one use "default".
+local ICONS = {
+    ["default"]                           = "https://steamusercontent-a.akamaihd.net/ugc/17565077082788158933/75472FA5DF4D9A5A79DFCACCF02E6D044B0AB70F/",
+    ["new-antioch"]                       = "https://steamusercontent-a.akamaihd.net/ugc/12140870569665962018/647EDFF35D1397EC9577768D1913B378FD7F36CB/",
+    ["trench-pilgrims"]                   = "https://steamusercontent-a.akamaihd.net/ugc/10865693481180792483/AE8CC3A0A475582AAA8BB10EC12569BAC5AF6C1A/",
+    ["iron-sultanate"]                    = "https://steamusercontent-a.akamaihd.net/ugc/11011531862432102694/E93E2E25F8A724A188A450B906DFAA25E146F085/",
+    ["heretic-legion"]                    = "https://steamusercontent-a.akamaihd.net/ugc/11780656566766941905/005DCBF2BD729C494E5EC0DA58CF0398ABA447A8/",
+    ["cult-of-the-black-grail"]           = "https://steamusercontent-a.akamaihd.net/ugc/15933842057862161695/5D24970A3042BDF9747BFC7DC74039B64C17BD99/",
+    ["court-of-the-seven-headed-serpent"] = "https://steamusercontent-a.akamaihd.net/ugc/12527179569780597784/62EFCEC8605897141AC23B9F8E49A464589B2001/",
+}
+
+-- f is set by the spawner (faction id). taken = has left the spawner's platform (shows the
+-- activation icon). links = floating dice, each with the drag values to restore on unlink.
+state = {f = nil, savePos = nil, tokens = {}, links = {}, activated = false, taken = false}
 
 local typedBuffer, activeRange = "", 0
+local following, followFrames = false, 0
 
 local PLAYER_COLORS = {
     White  = {1, 1, 1},       Brown = {0.44, 0.23, 0.05}, Red    = {0.85, 0.1, 0.1},
@@ -62,14 +76,13 @@ local function modelTop()
     return b.center.y - b.size.y / 2 + h
 end
 
--- Position above the model, turned with it. The activation token (diceIndex nil) is centred
--- over the model; dice go to its side in a row. markerHeight is the marker's own height,
--- so its bottom (not its centre) sits MARKER_GAP above the model.
-local function slotPosition(diceIndex, markerHeight)
-    local x = diceIndex and (DICE_OFFSET + (diceIndex - 1) * MARKER_SPACING) or 0
+-- Position of die number i above the model, beside the activation icon, turned with the
+-- model. dieHeight is the die's own height, so its bottom sits MARKER_GAP above the model.
+local function slotPosition(i, dieHeight)
+    local x = DICE_OFFSET + (i - 1) * DICE_SPACING
     local offset = Vector(x, 0, 0):rotateOver("y", self.getRotation().y)
     local p = self.getPosition()
-    return Vector(p.x + offset.x, modelTop() + MARKER_GAP + (markerHeight or 1) / 2, p.z + offset.z)
+    return Vector(p.x + offset.x, modelTop() + MARKER_GAP + (dieHeight or 1) / 2, p.z + offset.z)
 end
 
 local function onPlatform()
@@ -99,7 +112,78 @@ local function isOntoMe(pos)
     return best == self
 end
 
--- ============ FLOATING MARKERS ============
+-- ============ PANEL (activation icon + image tokens) ============
+-- One panel above the model. The activation icon is drawn over two dark, slightly offset
+-- copies of itself so it reads as a thick token instead of a flat picture. Buttons use
+-- indices as ids, so token names with special characters can't break the XML, and there
+-- are no tooltips (TTS draws object-UI tooltips on the ground and can leave them stuck).
+local function renderPanel()
+    local assets, parts = {}, {}
+    local icon = ICONS[state.f] or ICONS.default
+    if state.taken and icon then   -- setCustomAssets fails on a nil URL
+        assets[#assets + 1] = {name = "act", url = icon}
+        local tint = state.activated and "#666666" or "#FFFFFF"
+        parts[#parts + 1] = '<Image image="act" width="70" height="70" offsetXY="5 -5" color="#000000AA" preserveAspect="true"/>'
+            .. '<Image image="act" width="70" height="70" offsetXY="2.5 -2.5" color="#202020DD" preserveAspect="true"/>'
+            .. '<Button onClick="ui_toggleActivation" width="70" height="70" colors="#FFFFFF00|#FFFFFF00|#FFFFFF00|#FFFFFF00">'
+            .. '<Image image="act" color="' .. tint .. '" preserveAspect="true"/></Button>'
+    end
+    local n = #state.tokens
+    for i, t in ipairs(state.tokens) do
+        if t.url and t.url ~= "" then
+            assets[#assets + 1] = {name = "tok" .. i, url = t.url}
+            parts[#parts + 1] = '<Button id="tok:' .. i .. '" onClick="ui_removeToken" offsetXY="'
+                .. ((i - (n + 1) / 2) * 65) .. ' -90" width="60" height="60"'
+                .. ' colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"><Image image="tok' .. i
+                .. '" width="60" height="60" preserveAspect="true"/></Button>'
+        end
+    end
+    if #parts == 0 then
+        self.UI.setXml("")
+        return
+    end
+    self.UI.setCustomAssets(assets)
+    self.UI.setXml('<Panel position="0 -150 -250" width="400" height="400">' .. table.concat(parts) .. '</Panel>')
+end
+
+function ui_toggleActivation()
+    state.activated = not state.activated
+    renderPanel()
+    saveState()
+end
+
+-- Called by the spawner's "Ready all".
+function readyActivation()
+    if not state.activated then return end
+    state.activated = false
+    renderPanel()
+    saveState()
+end
+
+local function hasTokenTag(obj)
+    for _, t in ipairs(TOKEN_TAGS) do
+        if obj.hasTag(t) then return true end
+    end
+    return false
+end
+
+local function addToken(obj)
+    local name = obj.getName() ~= "" and obj.getName() or obj.getDescription()
+    local custom = obj.getCustomObject() or {}
+    state.tokens[#state.tokens + 1] = {name = name, url = custom.image}
+    obj.destruct()
+    renderPanel()
+    saveState()
+end
+
+function ui_removeToken(player, value, id)
+    local i = tonumber(string.sub(id, 5))   -- strip "tok:"
+    if i and state.tokens[i] then table.remove(state.tokens, i) end
+    renderPanel()
+    saveState()
+end
+
+-- ============ FLOATING DICE ============
 local function findLink(guid)
     for i, l in ipairs(state.links) do
         if l.guid == guid then return i end
@@ -107,9 +191,9 @@ local function findLink(guid)
     return nil
 end
 
--- Markers stay normal objects (number keys, state switching, picking up all work); only
--- gravity is switched off, and high drag keeps bumps from pushing them away. Uses TTS's own
--- use_gravity / drag members: setting the Unity Rigidbody directly gets overridden by TTS.
+-- Dice stay normal objects (number keys, picking up); only gravity is off, and high drag
+-- keeps bumps from pushing them away. Uses TTS's own use_gravity / drag members: setting the
+-- Unity Rigidbody directly gets overridden by TTS.
 local function setFloating(obj, link, on)
     if on then
         obj.use_gravity = false
@@ -124,127 +208,86 @@ local function setFloating(obj, link, on)
     end
 end
 
--- Moves every linked marker back into its slot and forgets markers that no longer exist.
+-- Moves every linked die back into its slot and forgets dice that no longer exist.
 function snapMarkers()
-    if state.attached then return end   -- attached markers already move with the model
+    if following then return end   -- the follow loop places them while the model moves
     local live = {}
     for _, l in ipairs(state.links) do
         local o = getObjectFromGUID(l.guid)
         if o then live[#live + 1] = {link = l, obj = o} end
     end
     state.links = {}
-    local dice = 0
     for i, e in ipairs(live) do
         state.links[i] = e.link
-        local diceIndex = nil
-        if e.link.guid ~= state.activation then
-            dice = dice + 1
-            diceIndex = dice
-        end
         setFloating(e.obj, e.link, true)
-        e.obj.setPositionSmooth(slotPosition(diceIndex, e.obj.getBoundsNormalized().size.y), false, true)
+        e.obj.setPositionSmooth(slotPosition(i, e.obj.getBoundsNormalized().size.y), false, true)
     end
     saveState()
+end
+
+-- While the model is held, falling or moved by "Load position", its dice are locked (so
+-- physics can't make them drift or flicker) and placed above it every frame. Once the model
+-- rests they are unlocked and float freely again.
+local function followStep()
+    if self == nil then
+        following = false
+        return
+    end
+    followFrames = followFrames - 1
+    local moving = self.held_by_color ~= nil or not self.resting or followFrames > 0
+    local i = 0
+    for _, l in ipairs(state.links) do
+        local o = getObjectFromGUID(l.guid)
+        if o then
+            i = i + 1
+            if moving then
+                o.setPosition(slotPosition(i, o.getBoundsNormalized().size.y))
+            else
+                o.setLock(false)
+            end
+        end
+    end
+    if moving then
+        Wait.frames(followStep, 1)
+    else
+        following = false
+        snapMarkers()
+    end
+end
+
+local function startFollowing()
+    followFrames = FOLLOW_MIN
+    if following or #state.links == 0 then return end
+    following = true
+    for _, l in ipairs(state.links) do
+        local o = getObjectFromGUID(l.guid)
+        if o then o.setLock(true) end
+    end
+    Wait.frames(followStep, 1)
 end
 
 local function unlink(guid, destroy)
     local i = findLink(guid)
     if not i then return end
     local l = table.remove(state.links, i)
-    if state.activation == guid then state.activation = nil end
     local o = getObjectFromGUID(guid)
     if o then
+        o.setLock(false)
         if destroy then o.destruct() else setFloating(o, l, false) end
     end
     snapMarkers()
 end
 
 local function addRemoveMenu(obj)
-    if obj.type ~= "Dice" then return end
     local guid = obj.getGUID()
     obj.addContextMenuItem("Remove marker", function() unlink(guid, true) end)
 end
 
-local function link(obj, first)
+local function link(obj)
     if findLink(obj.getGUID()) then snapMarkers() return end
-    local entry = {guid = obj.getGUID(), drag = obj.drag, ang = obj.angular_drag}
-    if first then table.insert(state.links, 1, entry) else state.links[#state.links + 1] = entry end
+    state.links[#state.links + 1] = {guid = obj.getGUID(), drag = obj.drag, ang = obj.angular_drag}
     addRemoveMenu(obj)
     snapMarkers()
-end
-
--- Spawns this faction's activation token (or the general one) above the model, once.
-local function requestActivation()
-    if state.asked or not state.f then return end
-    state.asked = true
-    saveState()
-    WebRequest.get(RAW_BASE .. "catalog/tokens.json?v=" .. tostring(state.cv or os.time()), function(req)
-        if req.is_error then return end
-        local ok, tokens = pcall(JSON.decode, req.text)
-        if not ok or type(tokens) ~= "table" or type(tokens.activation) ~= "table" then return end
-        local data = tokens.activation[state.f] or tokens.activation.general
-        if not data or self == nil then return end
-        spawnObjectData({
-            data = data,
-            position = slotPosition(nil, 1),
-            callback_function = function(o)
-                state.activation = o.getGUID()
-                link(o, true)
-            end,
-        })
-    end)
-end
-
--- Activation tokens are multi-state objects; any one dropped onto a model counts, whether it
--- came from the catalog (tagged) or from a table's bag (untagged).
-local function isActivationToken(obj)
-    if obj.hasTag(ACTIVATION_TAG) then return true end
-    local ok, states = pcall(obj.getStates)
-    return ok and type(states) == "table" and #states > 0
-end
-
--- ============ IMAGE TOKENS ============
-local function hasTokenTag(obj)
-    for _, t in ipairs(TOKEN_TAGS) do
-        if obj.hasTag(t) then return true end
-    end
-    return false
-end
-
--- Buttons use the token's index as id, so names with special characters can't break the XML.
-local function renderTokens()
-    local assets, buttons, n = {}, {}, #state.tokens
-    for i, t in ipairs(state.tokens) do
-        if t.url and t.url ~= "" then   -- setCustomAssets fails on a nil/empty URL
-            assets[#assets + 1] = {name = "tok" .. i, url = t.url}
-            -- No tooltip: TTS draws object-UI tooltips on the ground and can leave them stuck.
-            buttons[#buttons + 1] = '<Button id="tok:' .. i .. '" onClick="ui_removeToken" rectAlignment="MiddleCenter" offsetXY="' .. ((i - (n + 1) / 2) * 65) .. ' -90" width="60" height="60"'
-                .. ' colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"><Image image="tok' .. i
-                .. '" width="60" height="60" preserveAspect="true"/></Button>'
-        end
-    end
-    if #buttons == 0 then
-        self.UI.setXml("")
-        return
-    end
-    self.UI.setCustomAssets(assets)
-    self.UI.setXml('<Panel position="0 -150 -250" width="400" height="400">' .. table.concat(buttons) .. '</Panel>')
-end
-
-local function addToken(obj)
-    local name = obj.getName() ~= "" and obj.getName() or obj.getDescription()
-    local custom = obj.getCustomObject() or {}
-    state.tokens[#state.tokens + 1] = {name = name, url = custom.image}
-    obj.destruct()
-    renderTokens()
-    saveState()
-end
-
-function ui_removeToken(player, value, id)
-    local i = tonumber(string.sub(id, 5))   -- strip "tok:"
-    if i and state.tokens[i] then table.remove(state.tokens, i) end
-    renderTokens()
-    saveState()
 end
 
 -- ============ RANGE RINGS ============
@@ -304,97 +347,41 @@ function loadPosition()
     if not state.savePos then return end
     self.setPositionSmooth(state.savePos.position)
     self.setRotationSmooth(state.savePos.rotation)
-    Wait.time(snapMarkers, 1)
+    startFollowing()
 end
 
 -- ============ EVENTS ============
--- While the model moves, its markers are TTS attachments: they move exactly with it (also
--- while it falls after being dropped). Attached objects can't be used on their own (clicking
--- one grabs the model), so they are released again once the model has come to rest.
-local function attachMarkers()
-    if state.attached or #state.links == 0 then return end
-    for _, l in ipairs(state.links) do
-        local o = getObjectFromGUID(l.guid)
-        if o then self.addAttachment(o) end
-    end
-    state.attached = true
-    saveState()
-end
-
--- Only our markers are released: the model's own attachments (usually the sculpt on its base)
--- stay. Indices are removed from the highest down so the remaining ones don't shift.
-local function detachMarkers()
-    if not state.attached or self == nil then return end
-    state.attached = false
-    local byGuid = {}
-    for _, l in ipairs(state.links) do byGuid[l.guid] = l end
-    local found = {}
-    for _, a in ipairs(self.getAttachments()) do
-        if byGuid[a.guid] then found[#found + 1] = a end
-    end
-    table.sort(found, function(x, y) return x.index > y.index end)
-    for _, a in ipairs(found) do
-        local o = self.removeAttachment(a.index)
-        -- The released object may come back with a new GUID; keep the link pointing at it.
-        if o then
-            local l = byGuid[a.guid]
-            if state.activation == l.guid then state.activation = o.getGUID() end
-            l.guid = o.getGUID()
-            addRemoveMenu(o)
-        end
-    end
-    snapMarkers()
-end
-
-local function detachWhenResting()
-    Wait.condition(detachMarkers, function() return self == nil or self.resting end, 10, detachMarkers)
-end
-
 function onPickUp()
     destabilize()
-    attachMarkers()
+    startFollowing()
 end
 
 -- Global event, delivered to every object script: handles the model itself being put down,
--- dice/tokens dropped onto it, and its markers being dragged away.
+-- dice/tokens dropped onto it, and its dice being dragged away.
 function onObjectDrop(player_color, obj)
     if obj == nil then return end
     if obj == self then
         Wait.frames(stabilize, 10)
-        detachWhenResting()
+        startFollowing()   -- keeps the dice with the model while it falls
         Wait.time(function()
-            if self == nil then return end
-            if not state.activation and not onPlatform() then requestActivation() end
+            if self == nil or state.taken or onPlatform() then return end
+            state.taken = true   -- off the spawner's platform: show the activation icon
+            renderPanel()
+            saveState()
         end, 0.5)
         return
     end
     local linked = findLink(obj.getGUID())
     local token = hasTokenTag(obj)
-    local activation = not token and isActivationToken(obj)
-    if not (linked or token or activation or obj.type == "Dice") then return end
+    if not (linked or token or obj.type == "Dice") then return end
     local onto = isOntoMe(obj.getPosition())
     if token then
         if onto then addToken(obj) end
     elseif onto then
-        if activation then
-            -- Tagged so "Ready all" finds it; a second activation token replaces nothing, it just links.
-            if not obj.hasTag(ACTIVATION_TAG) then obj.addTag(ACTIVATION_TAG) end
-            if not state.activation then state.activation = obj.getGUID() end
-        end
-        link(obj, activation)
+        link(obj)
     elseif linked then
         unlink(obj.getGUID(), false)
     end
-end
-
--- Switching a multi-state object's state replaces it with a new object (new GUID).
-function onObjectStateChange(obj, oldGuid)
-    local i = findLink(oldGuid)
-    if not i then return end
-    state.links[i].guid = obj.getGUID()
-    if state.activation == oldGuid then state.activation = obj.getGUID() end
-    if not obj.hasTag(ACTIVATION_TAG) then obj.addTag(ACTIVATION_TAG) end
-    snapMarkers()
 end
 
 -- Number keys over a linked die: TTS's own handling puts the die down, so set the face here
@@ -411,12 +398,15 @@ function onObjectRandomize(obj)
     if findLink(obj.getGUID()) then Wait.time(snapMarkers, 1.5) end
 end
 
--- Linked markers get gravity back so they don't hang in the air without their model.
+-- Linked dice get gravity back so they don't hang in the air without their model.
 -- After a reload onLoad makes them float again.
 function onDestroy()
     for _, l in ipairs(state.links) do
         local o = getObjectFromGUID(l.guid)
-        if o then setFloating(o, l, false) end
+        if o then
+            o.setLock(false)
+            setFloating(o, l, false)
+        end
     end
 end
 
@@ -433,33 +423,35 @@ function onLoad(saved_data)
 
     self.addContextMenuItem("Save position", savePosition)
     self.addContextMenuItem("Load position", loadPosition)
-    self.addContextMenuItem("Unlink markers", function()
+    self.addContextMenuItem("Unlink dice", function()
         for _, l in ipairs(state.links) do
             local o = getObjectFromGUID(l.guid)
-            if o then setFloating(o, l, false) end
+            if o then
+                o.setLock(false)
+                setFloating(o, l, false)
+            end
         end
-        state.links, state.activation = {}, nil
+        state.links = {}
         saveState()
     end)
     self.addContextMenuItem("Clear tokens", function()
         state.tokens = {}
-        renderTokens()
+        renderPanel()
         saveState()
     end)
 
-    -- Other objects (and our markers) may still be loading; set things up a bit later.
+    -- Other objects (and our dice) may still be loading; set things up a bit later.
     Wait.frames(function()
         if self == nil then return end
         stabilize()
-        renderTokens()
-        if state.attached then
-            detachMarkers()   -- saved while the model was moving
-        else
-            for _, l in ipairs(state.links) do
-                local o = getObjectFromGUID(l.guid)
-                if o then addRemoveMenu(o) end
+        renderPanel()
+        for _, l in ipairs(state.links) do
+            local o = getObjectFromGUID(l.guid)
+            if o then
+                o.setLock(false)   -- in case the game was saved while the model was moving
+                addRemoveMenu(o)
             end
-            snapMarkers()
         end
+        snapMarkers()
     end, 30)
 end

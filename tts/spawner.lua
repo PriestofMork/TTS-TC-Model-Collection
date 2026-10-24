@@ -9,12 +9,11 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 2
+local SPAWNER_VERSION = 3
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
 local SPAWN_TAG = "TCM_Spawned"
-local ACTIVATION_TAG = "TCM_Activation"   -- activation tokens, see tts/model.lua
 local MODEL_TAG      = "TCM_Model"        -- models running tts/model.lua
 local PLATFORM_NAME  = "TC spawn platform"
 
@@ -319,12 +318,11 @@ end
 
 local function spawnModel(data, pos, memo, f)
     local t = data.Transform or {}
-    -- The model script and its starting state (faction for the activation token, catalog
-    -- version for cache busting) go into the data, so no "extend" step is needed. The data is
+    -- The model script and its starting state (faction, for the activation icon) go into the data, so no "extend" step is needed. The data is
     -- cached per unit, so both are set (or cleared) on every spawn.
     if scriptsOn and modelScript then
         data.LuaScript = modelScript
-        data.LuaScriptState = JSON.encode({f = f, cv = index.version})
+        data.LuaScriptState = JSON.encode({f = f})
     else
         data.LuaScript, data.LuaScriptState = nil, nil
     end
@@ -676,18 +674,6 @@ function ui_toggleScripts()
     render()
 end
 
--- Activation tokens are multi-state objects: state 1 = ready, state 2 = activated.
-function ui_readyAll()
-    local n = 0
-    for _, obj in ipairs(getAllObjects()) do
-        if obj.hasTag(ACTIVATION_TAG) and obj.getStateId() > 1 then
-            obj.setState(1)
-            n = n + 1
-        end
-    end
-    setStatus("Readied " .. n .. " model(s).")
-end
-
 local function callOnModels(fn)
     local n = 0
     for _, obj in ipairs(getAllObjects()) do
@@ -699,6 +685,7 @@ local function callOnModels(fn)
     return n
 end
 
+function ui_readyAll() setStatus("Readied " .. callOnModels("readyActivation") .. " model(s).") end
 function ui_saveAll() setStatus("Saved positions of " .. callOnModels("savePosition") .. " model(s).") end
 function ui_loadAll() setStatus("Moved " .. callOnModels("loadPosition") .. " model(s) back.") end
 
