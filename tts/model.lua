@@ -12,7 +12,7 @@
 --  * Floating markers: once the model is taken off the spawner's platform it gets its
 --    faction's activation token floating above it; any multi-state token dropped onto it
 --    links as its activation token too. Any die dropped onto the model floats next to that
---    token. Markers stay above the model, also while it is carried.
+--    token. Markers are attached to the model while it moves and float freely while it stands.
 --    Right-click a die -> "Remove marker", or drag it off the model to unlink it.
 --
 -- Ideas from the legacy UI extender; stabilisation from Pyromaniacal's Stabilized Bases (MIT).
@@ -125,8 +125,8 @@ local function setFloating(obj, link, on)
 end
 
 -- Moves every linked marker back into its slot and forgets markers that no longer exist.
--- instant = teleport (used while the model is carried), otherwise a short smooth move.
-function snapMarkers(instant)
+function snapMarkers()
+    if state.attached then return end   -- attached markers already move with the model
     local live = {}
     for _, l in ipairs(state.links) do
         local o = getObjectFromGUID(l.guid)
@@ -141,16 +141,10 @@ function snapMarkers(instant)
             dice = dice + 1
             diceIndex = dice
         end
-        local pos = slotPosition(diceIndex, e.obj.getBoundsNormalized().size.y)
-        if instant == true then
-            e.obj.setPosition(pos)
-            e.obj.setVelocity({0, 0, 0})
-        else
-            setFloating(e.obj, e.link, true)
-            e.obj.setPositionSmooth(pos, false, true)
-        end
+        setFloating(e.obj, e.link, true)
+        e.obj.setPositionSmooth(slotPosition(diceIndex, e.obj.getBoundsNormalized().size.y), false, true)
     end
-    if instant ~= true then saveState() end
+    saveState()
 end
 
 local function unlink(guid, destroy)
@@ -314,16 +308,51 @@ function loadPosition()
 end
 
 -- ============ EVENTS ============
--- While the model is held, keep its markers above it (every few frames, until it's dropped).
-local function followWhileHeld()
-    if self == nil or self.held_by_color == nil then return end
-    snapMarkers(true)
-    Wait.frames(followWhileHeld, 3)
+-- While the model moves, its markers are TTS attachments: they move exactly with it (also
+-- while it falls after being dropped). Attached objects can't be used on their own (clicking
+-- one grabs the model), so they are released again once the model has come to rest.
+local function attachMarkers()
+    if state.attached or #state.links == 0 then return end
+    for _, l in ipairs(state.links) do
+        local o = getObjectFromGUID(l.guid)
+        if o then self.addAttachment(o) end
+    end
+    state.attached = true
+    saveState()
+end
+
+-- Only our markers are released: the model's own attachments (usually the sculpt on its base)
+-- stay. Indices are removed from the highest down so the remaining ones don't shift.
+local function detachMarkers()
+    if not state.attached or self == nil then return end
+    state.attached = false
+    local byGuid = {}
+    for _, l in ipairs(state.links) do byGuid[l.guid] = l end
+    local found = {}
+    for _, a in ipairs(self.getAttachments()) do
+        if byGuid[a.guid] then found[#found + 1] = a end
+    end
+    table.sort(found, function(x, y) return x.index > y.index end)
+    for _, a in ipairs(found) do
+        local o = self.removeAttachment(a.index)
+        -- The released object may come back with a new GUID; keep the link pointing at it.
+        if o then
+            local l = byGuid[a.guid]
+            if state.activation == l.guid then state.activation = o.getGUID() end
+            l.guid = o.getGUID()
+            addRemoveMenu(o)
+        end
+    end
+    snapMarkers()
+end
+
+local function detachWhenResting()
+    Wait.condition(detachMarkers, function() return self == nil or self.resting end, 10, detachMarkers)
 end
 
 function onPickUp()
     destabilize()
-    if #state.links > 0 then Wait.frames(followWhileHeld, 3) end
+    attachMarkers()
 end
 
 -- Global event, delivered to every object script: handles the model itself being put down,
@@ -332,10 +361,10 @@ function onObjectDrop(player_color, obj)
     if obj == nil then return end
     if obj == self then
         Wait.frames(stabilize, 10)
+        detachWhenResting()
         Wait.time(function()
             if self == nil then return end
             if not state.activation and not onPlatform() then requestActivation() end
-            snapMarkers()
         end, 0.5)
         return
     end
@@ -366,6 +395,15 @@ function onObjectStateChange(obj, oldGuid)
     if state.activation == oldGuid then state.activation = obj.getGUID() end
     if not obj.hasTag(ACTIVATION_TAG) then obj.addTag(ACTIVATION_TAG) end
     snapMarkers()
+end
+
+-- Number keys over a linked die: TTS's own handling puts the die down, so set the face here
+-- and keep it floating. Returning true stops TTS's default.
+function onObjectNumberTyped(obj, player_color, number)
+    if obj == nil or obj.type ~= "Dice" or not findLink(obj.getGUID()) then return end
+    obj.setValue(number)
+    Wait.frames(snapMarkers, 5)
+    return true
 end
 
 -- A rolled die flies off without gravity; put it back once it has its number.
@@ -414,10 +452,14 @@ function onLoad(saved_data)
         if self == nil then return end
         stabilize()
         renderTokens()
-        for _, l in ipairs(state.links) do
-            local o = getObjectFromGUID(l.guid)
-            if o then addRemoveMenu(o) end
+        if state.attached then
+            detachMarkers()   -- saved while the model was moving
+        else
+            for _, l in ipairs(state.links) do
+                local o = getObjectFromGUID(l.guid)
+                if o then addRemoveMenu(o) end
+            end
+            snapMarkers()
         end
-        snapMarkers()
     end, 30)
 end
