@@ -9,11 +9,14 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 1
+local SPAWNER_VERSION = 2
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
 local SPAWN_TAG = "TCM_Spawned"
+local ACTIVATION_TAG = "TCM_Activation"   -- activation tokens, see tts/model.lua
+local MODEL_TAG      = "TCM_Model"        -- models running tts/model.lua
+local PLATFORM_NAME  = "TC spawn platform"
 
 -- Layout, in world units relative to the spawner (follows its position and rotation, not its
 -- scale). Rows start behind the panel as seen by a player reading it (local -z: tested in TTS,
@@ -65,6 +68,8 @@ local unitCache    = {}      -- unit file -> decoded entries (for the loaded cat
 local panelHeight  = 720     -- UI units; set by buildXml, used by the layout
 local layoutEdge   = nil     -- distance from the spawner's centre to the first row (world units)
 local showArea     = true    -- spawn-area indicator visible
+local scriptsOn    = true    -- put tts/model.lua into spawned models
+local modelScript  = nil     -- tts/model.lua, fetched on load
 
 -- ============ UTIL ============
 local function xmlEscape(s)
@@ -227,6 +232,12 @@ local function buildXml()
             .. '<Button onClick="ui_clearAll">Clear all</Button>'
             .. '<Button onClick="ui_toggleArea">' .. (showArea and 'Hide area' or 'Show area') .. '</Button>'
             .. '</HorizontalLayout>')
+        row(40, '<HorizontalLayout preferredHeight="40" spacing="6">'
+            .. '<Button onClick="ui_readyAll" fontSize="15">Ready all</Button>'
+            .. '<Button onClick="ui_saveAll" fontSize="15">Save positions</Button>'
+            .. '<Button onClick="ui_loadAll" fontSize="15">Load positions</Button>'
+            .. '<Button onClick="ui_toggleScripts" fontSize="15">' .. (scriptsOn and 'Model scripts: on' or 'Model scripts: off')
+            .. '</Button></HorizontalLayout>')
     else
         row(40, '<Button onClick="ui_reload" preferredHeight="40">Reload catalog</Button>')
     end
@@ -306,8 +317,17 @@ local function spawnLabel(text, pos, memo)
     })
 end
 
-local function spawnModel(data, pos, memo)
+local function spawnModel(data, pos, memo, f)
     local t = data.Transform or {}
+    -- The model script and its starting state (faction for the activation token, catalog
+    -- version for cache busting) go into the data, so no "extend" step is needed. The data is
+    -- cached per unit, so both are set (or cleared) on every spawn.
+    if scriptsOn and modelScript then
+        data.LuaScript = modelScript
+        data.LuaScriptState = JSON.encode({f = f, cv = index.version})
+    else
+        data.LuaScript, data.LuaScriptState = nil, nil
+    end
     -- Tag and memo go into the data before spawning and are set again once the object exists,
     -- in case spawnObjectData ignores either field.
     data.Memo = memo
@@ -383,7 +403,7 @@ local function queueUnit(f, unit, entries)
         for _, item in ipairs(row) do
             local pos = layoutToWorld(item.x - rowWidth / 2, zc, top + SPAWN_HEIGHT)
             local data = item.data
-            jobs[#jobs + 1] = function() spawnModel(data, pos, memo) end
+            jobs[#jobs + 1] = function() spawnModel(data, pos, memo, f) end
         end
         z = z + rowDepth + ROW_GAP
         x, rowDepth, row = 0, 0, {}
@@ -468,14 +488,31 @@ end
 -- Destroys one unit's objects from this spawner (key), or with key nil every TC spawned
 -- object on the table, whichever spawner made it. Clearing everything also catches models
 -- left behind by an older copy of this spawner (e.g. after pasting a new script).
+-- A spawned model that a player has taken off its platform is theirs now: clearing leaves
+-- it alone and removes the spawn tag, so later clears don't touch it either.
+local function standsOnPlatform(obj)
+    local p = obj.getPosition()
+    local hits = Physics.cast({origin = {p.x, p.y + 0.5, p.z}, direction = {0, -1, 0}, type = 1, max_distance = 3})
+    for _, hit in ipairs(hits) do
+        if hit.hit_object ~= obj and hit.hit_object.getName() == PLATFORM_NAME then return true end
+    end
+    return false
+end
+
 local function clearSpawned(key, done)
     local wanted = key and (token .. "|" .. key) or nil
     local count = 0
     for _, obj in ipairs(spawnedObjects()) do
         if not wanted or obj.memo == wanted then
-            count = count + 1
-            queue[#queue + 1] = function()
-                if obj ~= nil then obj.destruct() end   -- destroyed objects compare equal to nil
+            local isModel = obj.getName() ~= PLATFORM_NAME and obj.name ~= "3DText"
+            if isModel and not standsOnPlatform(obj) then
+                obj.removeTag(SPAWN_TAG)
+                obj.memo = ""
+            else
+                count = count + 1
+                queue[#queue + 1] = function()
+                    if obj ~= nil then obj.destruct() end   -- destroyed objects compare equal to nil
+                end
             end
         end
     end
@@ -498,6 +535,15 @@ local function applyIndex(text)
     if not factionById[sel.f] then sel.f, sel.sub = data.factions[1].id, nil end
     setStatus("Catalog version " .. tostring(data.version) .. " loaded.")
     render()
+    -- The model script is fetched with a timestamp: it can change without a catalog update.
+    WebRequest.get(RAW_BASE .. "tts/model.lua?v=" .. os.time(), function(req)
+        if req.is_error or (req.response_code and req.response_code >= 400) or not req.text then
+            modelScript = nil
+            setStatus("Catalog loaded, but the model script could not be loaded: models spawn without it.")
+            return
+        end
+        modelScript = req.text
+    end)
 end
 
 local function loadIndex(catalogVersion)
@@ -624,6 +670,38 @@ end
 
 function ui_reload() loadCatalog() end
 
+function ui_toggleScripts()
+    scriptsOn = not scriptsOn
+    saveState()
+    render()
+end
+
+-- Activation tokens are multi-state objects: state 1 = ready, state 2 = activated.
+function ui_readyAll()
+    local n = 0
+    for _, obj in ipairs(getAllObjects()) do
+        if obj.hasTag(ACTIVATION_TAG) and obj.getStateId() > 1 then
+            obj.setState(1)
+            n = n + 1
+        end
+    end
+    setStatus("Readied " .. n .. " model(s).")
+end
+
+local function callOnModels(fn)
+    local n = 0
+    for _, obj in ipairs(getAllObjects()) do
+        if obj.hasTag(MODEL_TAG) then
+            obj.call(fn)
+            n = n + 1
+        end
+    end
+    return n
+end
+
+function ui_saveAll() setStatus("Saved positions of " .. callOnModels("savePosition") .. " model(s).") end
+function ui_loadAll() setStatus("Moved " .. callOnModels("loadPosition") .. " model(s) back.") end
+
 function ui_toggleArea()
     showArea = not showArea
     saveState()
@@ -633,7 +711,7 @@ end
 -- ============ SAVE / LOAD ============
 function onSave()
     return JSON.encode({token = token, cursorZ = cursorZ, layoutEdge = layoutEdge, f = sel.f, sub = sel.sub,
-                        showArea = showArea})
+                        showArea = showArea, scriptsOn = scriptsOn})
 end
 
 -- Each step runs protected and reports its name, so a failure in TTS says where it happened
@@ -656,6 +734,7 @@ function onLoad(saved_data)
                 token, cursorZ, layoutEdge = data.token, data.cursorZ or 0, data.layoutEdge
                 sel.f, sel.sub = data.f, data.sub
                 if data.showArea == false then showArea = false end
+                if data.scriptsOn == false then scriptsOn = false end
             end
         end
     end)

@@ -9,6 +9,7 @@ duplicates, cleans the TTS object data and writes:
 
     catalog/units/<faction>/<unit>.json   one file per unit, one model per line
     catalog/index.json                    small menu index for the spawner
+    catalog/tokens.json                   activation tokens per faction (plus "general")
     catalog/version.json                  "catalog" is bumped only if the output changed
 """
 
@@ -25,6 +26,7 @@ CATALOG = REPO / "catalog"
 # Keys stripped from the model and from everything attached to it. Source mods often ship
 # heavy per-model scripts and UI; GUIDs are reassigned by TTS anyway.
 STRIP_KEYS = ("LuaScript", "LuaScriptState", "XmlUI", "GUID", "ContainedObjects", "GMNotes")
+ACTIVATION_TAG = "TCM_Activation"
 
 
 # ---------------------------------------------------------------- reading
@@ -45,6 +47,32 @@ def parse_tag(notes):
     except ValueError:
         return None
     return tag if isinstance(tag, dict) and tag.get("tc") == 1 else None
+
+
+def parse_token(notes):
+    """Activation token marker written by the intake: {"tcm":"activation","f":<faction|general>}."""
+    if not notes or '"tcm"' not in notes:
+        return None
+    try:
+        tag = json.loads(notes)
+    except ValueError:
+        return None
+    return tag if isinstance(tag, dict) and tag.get("tcm") == "activation" else None
+
+
+def clean_token(data):
+    """Activation tokens are spawned by tts/model.lua and found again by their tag."""
+    strip(data)
+    data["Locked"] = False
+    t = data.setdefault("Transform", {})
+    t["posX"] = t["posY"] = t["posZ"] = 0.0
+    round_transform(t)
+    # Every state carries the tag: switching state replaces the object with that state's data.
+    for part in [data, *(data.get("States") or {}).values()]:
+        tags = part.setdefault("Tags", [])
+        if ACTIVATION_TAG not in tags:
+            tags.append(ACTIVATION_TAG)
+    return data
 
 
 def load_config():
@@ -186,7 +214,18 @@ def main():
     warnings = []
     units = {}  # (f, u) -> {dedupe key or index: entry}
     tagged = 0
+    tokens = {}  # faction id or "general" -> cleaned token data
     for obj in iter_objects(save.get("ObjectStates", [])):
+        token = parse_token(obj.get("GMNotes"))
+        if token:
+            f = token.get("f")
+            if f != "general" and f not in lookup:
+                warnings.append(f"SKIPPED activation token ({obj.get('GUID', '?')}): unknown faction '{f}'")
+            elif f in tokens:
+                warnings.append(f"second activation token for '{f}' ({obj.get('GUID', '?')}) ignored")
+            else:
+                tokens[f] = clean_token(json.loads(json.dumps(obj)))
+            continue
         tag = parse_tag(obj.get("GMNotes"))
         if not tag:
             continue
@@ -259,6 +298,9 @@ def main():
                 "subfactions": faction.get("subfactions", []),
                 "units": index_units,
             })
+
+    files["tokens.json"] = dump_json({"activation": dict(sorted(tokens.items()))})
+    summary.append(f"  Activation tokens: {', '.join(sorted(tokens)) or 'none'}")
 
     # ---- decide whether anything changed (index compared without its version number)
     version_path = CATALOG / "version.json"

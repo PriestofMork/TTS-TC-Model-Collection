@@ -211,6 +211,14 @@ local function buildXml()
         .. (config and '<Button onClick="ui_unsorted" fontSize="16">Check unsorted</Button>' or '')
         .. '<Button onClick="ui_reload" fontSize="16">Reload config</Button></HorizontalLayout>')
 
+    -- Activation tokens: non-model objects in the zone (multi-state tokens) are tagged for the
+    -- selected faction or as the general token. They stay where they are; export reads them.
+    if config then
+        row(36, '<HorizontalLayout preferredHeight="36" spacing="6">'
+            .. '<Button onClick="ui_tokenFaction" fontSize="15">Activation token: this faction</Button>'
+            .. '<Button onClick="ui_tokenGeneral" fontSize="15">Activation token: general</Button></HorizontalLayout>')
+    end
+
     row(160, '<Text preferredHeight="160" fontSize="16" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
 
     return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/>'
@@ -300,7 +308,8 @@ local function loadConfig()
 end
 
 -- ============ ZONE ============
--- Returns {obj=, tag=} for every model in the zone, plus how many other objects were ignored.
+-- Returns {obj=, tag=} for every model in the zone, how many other objects were ignored, and
+-- those other (unlocked) objects themselves, for tagging activation tokens.
 local function scanZone()
     local origin = toWorld(ZONE_OFFSET.x, ZONE_OFFSET.z)
     origin.y = tableY() + ZONE_SIZE.y / 2
@@ -313,7 +322,7 @@ local function scanZone()
         max_distance = 0.01,   -- overlap check; objects inside the box at the start are reported
     })
 
-    local items, ignored, seen = {}, 0, {}
+    local items, ignored, seen, others = {}, 0, {}, {}
     for _, hit in ipairs(hits) do
         local obj = hit.hit_object
         if obj and obj ~= self and not seen[obj.getGUID()] then
@@ -323,10 +332,11 @@ local function scanZone()
                 items[#items + 1] = {obj = obj, tag = parseTag(obj.getGMNotes())}
             elseif obj.name ~= "Table_Custom" and obj.type ~= "Surface" then
                 ignored = ignored + 1
+                if not obj.getLock() then others[#others + 1] = obj end
             end
         end
     end
-    return items, ignored
+    return items, ignored, others
 end
 
 local function selectionLabel()
@@ -559,6 +569,24 @@ end
 function ui_preview() preview(false) end
 function ui_submit() submit() end
 function ui_unsorted() checkUnsorted() end
+
+local function tagActivationTokens(f)
+    if busy or not config then return end
+    local _, _, others = scanZone()
+    clearHighlights()
+    for _, obj in ipairs(others) do
+        obj.setGMNotes(JSON.encode({tcm = "activation", f = f}))
+        highlight(obj, COLOR_RETAG)
+    end
+    if #others == 0 then
+        setStatus("Put the activation token (not a model) into the zone first.")
+    else
+        setStatus("Tagged " .. #others .. " object(s) as activation token for '" .. f .. "'. Leave them in the save; export picks them up.")
+    end
+end
+
+function ui_tokenFaction() tagActivationTokens(sel.f) end
+function ui_tokenGeneral() tagActivationTokens("general") end
 function ui_reload() loadConfig() end
 
 function ui_clear()
