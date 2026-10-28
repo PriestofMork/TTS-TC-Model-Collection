@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 10
+local SPAWNER_VERSION = 11
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -34,6 +34,9 @@ local MODEL_PAD     = 0.4    -- space between models in a row
 local ROW_GAP       = 0.6    -- space between rows
 local LABEL_DEPTH   = 1.1    -- room reserved for a unit's label in front of its first row
 local LABEL_CHAR    = 0.4    -- estimated label width per character at LABEL_FONT
+local NOTE_DEPTH    = 0.5    -- room for a block's small note line (warbands: how to swap)
+local NOTE_FONT     = 20
+local NOTE_CHAR     = 0.17   -- estimated note width per character at NOTE_FONT
 local BLOCK_GAP     = 0.8    -- space between two units' platforms
 
 -- Each unit stands on its own locked platform, raised above the surface the spawner stands
@@ -55,6 +58,14 @@ local LABEL_FONT  = 36
 local BATCH_SIZE = 15        -- objects spawned or destroyed per frame
 
 local UI_MARGIN = 5          -- console: extra lift above the hub's top face, in UI units
+
+-- Extend UI area: above the spawn area (away from the player), as wide as two units. Any model
+-- dropped into it gets the model script (tts/model.lua) with the faction picked in it.
+local EXT_GAP    = 2.0       -- between the spawn area's top edge and the Extend area (platforms are 2" high and hide what's just behind them)
+local EXT_W      = 14
+local EXT_D      = 6
+local COL_EXT    = "#E0B050"
+local FIGURES    = {Custom_Model = true, Custom_Assetbundle = true, Figurine_Custom = true}
 
 -- Side console, in world inches (the root panel undoes the hub's scale: 100 UI units = 1").
 local CON_GAP    = 0.3       -- spacing between console parts
@@ -80,6 +91,7 @@ local ART = {
     import   = "https://cdnb.artstation.com/p/assets/images/images/031/677/223/large/mike-franchina-procession-pilgrimage-web.jpg?1604303199",
     settings = "https://cdnb.artstation.com/p/assets/images/images/031/363/803/large/mike-franchina-flak-battery2.jpg?1603392122",
     clear    = "https://cdnb.artstation.com/p/assets/images/images/024/247/491/large/mike-franchina-cardinal-of-malady.jpg?1581794458",
+    extend   = "https://cdna.artstation.com/p/assets/images/images/021/700/638/large/mike-franchina-aspect-of-the-wolf-small.jpg?1572626489",
 }
 -- Faction icons: the same images as the activation token in tts/model.lua.
 local ICONS = {
@@ -107,6 +119,8 @@ local scriptsOn    = true    -- put tts/model.lua into spawned models
 local modelScript  = nil     -- tts/model.lua, fetched on load
 local listMode     = "units" -- what the console's list column shows: "units", "import", "settings"
 local importText   = ""      -- what was pasted; kept here, the box itself isn't re-rendered
+local extendOn     = false   -- the Extend UI area is shown (and active)
+local extendF      = nil     -- faction id picked in the Extend UI area
 
 -- ============ UTIL ============
 local function xmlEscape(s)
@@ -331,12 +345,12 @@ local function buildXml()
     else
         -- Action icons below the hub, with their names under them.
         local ay = -hd - CON_GAP - ACTION / 2
-        local actions = {{"import", "Import"}, {"settings", "Settings"}, {"clear", "Clear all"}}
+        local actions = {{"import", "Import"}, {"extend", "Extend UI"}, {"settings", "Settings"}, {"clear", "Clear all"}}
         for i, a in ipairs(actions) do
             local x = -hw + ACTION / 2 + (i - 1) * (ACTION + 0.25)
             put("Button", x, ay, ACTION, ACTION, 'id="' .. a[1] .. '" onClick="ui_click" image="a_' .. a[1] .. '" colors="' .. COL_ICON .. '"')
             text(x, ay - ACTION / 2 - 0.15, ACTION + 0.25, 0.28, a[2], 'fontSize="20" alignment="MiddleCenter"'
-                .. (listMode == a[1] and ' color="#E0B050"' or ''))
+                .. ((listMode == a[1] or (a[1] == "extend" and extendOn)) and ' color="#E0B050"' or ''))
         end
 
         -- Faction icons in a column.
@@ -397,6 +411,29 @@ local function buildXml()
             y = y - 0.1
             row(cx, y - ROW_H / 2, LIST_W, ROW_H, "all", any and COL_ALL or COL_ROW,
                 any and "Spawn whole faction" or "No models for this filter")
+        end
+    end
+
+    -- Extend UI area above the spawn area. Its fill, frame and texts don't take clicks
+    -- (raycastTarget false), so models standing on it can still be picked up.
+    if index and extendOn then
+        local ax, top = areaOrigin()
+        local y0 = top + EXT_GAP                -- edge toward the player
+        local cx, cy = ax + EXT_W / 2, y0 + EXT_D / 2
+        local deco = 'raycastTarget="false" color="' .. COL_EXT .. '"'
+        put("Panel", cx, cy, EXT_W, EXT_D, 'raycastTarget="false" color="#E0B05018"')
+        put("Panel", cx, y0, EXT_W, 0.06, deco)
+        put("Panel", cx, y0 + EXT_D, EXT_W, 0.06, deco)
+        put("Panel", ax, cy, 0.06, EXT_D, deco)
+        put("Panel", ax + EXT_W, cy, 0.06, EXT_D, deco)
+        text(cx, y0 + EXT_D - 0.4, EXT_W - 0.5, 0.5, "Extend UI: drop any model in here",
+            'raycastTarget="false" fontSize="34" fontStyle="Bold" alignment="MiddleLeft"')
+        text(cx, y0 + EXT_D - 0.9, EXT_W - 0.5, 0.4, "It gets the TC model script (activation, dice, tokens, "
+            .. "range rings) with this faction's icon:", 'raycastTarget="false" fontSize="22" alignment="MiddleLeft"')
+        for i, f in ipairs(index.factions) do
+            put("Button", ax + 0.65 + (i - 1) * 0.95, y0 + EXT_D - 1.6, 0.8, 0.8,
+                'id="extendf:' .. f.id .. '" onClick="ui_click" image="f_' .. (ICONS[f.id] and f.id or "default")
+                .. '" colors="' .. (extendF == f.id and COL_ICON or COL_DIM) .. '"')
         end
     end
 
@@ -568,12 +605,14 @@ local function findSpot(w, d)
     return left, zs[#zs]   -- not reached: the last z is behind every block
 end
 
-local function queueBlock(key, label, items)
+-- note: an optional small line in front of the label (warbands: how to swap models).
+local function queueBlock(key, label, items, note)
     local memo = token .. "|" .. key
+    local noteDepth = note and NOTE_DEPTH or 0
 
     -- First the block's own layout, relative to its centre line (x) and its edge facing the
-    -- player (z, growing away from them): the label there, the rows behind it.
-    local z = PLATFORM_MARGIN + LABEL_DEPTH
+    -- player (z, growing away from them): the note and label there, the rows behind them.
+    local z = PLATFORM_MARGIN + noteDepth + LABEL_DEPTH
     local placed = {}   -- {item, x, z}
 
     local x, rowDepth, row, widest = 0, 0, {}, 0   -- x = width used so far in this row
@@ -598,7 +637,7 @@ local function queueBlock(key, label, items)
 
     -- The platform covers the label and the widest row. Then the block gets its place.
     local depth = z - ROW_GAP + PLATFORM_MARGIN
-    local width = math.max(widest, #label * LABEL_CHAR) + 2 * PLATFORM_MARGIN
+    local width = math.max(widest, #label * LABEL_CHAR, note and #note * NOTE_CHAR or 0) + 2 * PLATFORM_MARGIN
     local bx, bz = findSpot(width, depth)
     blocks[key] = {x = bx, z = bz, w = width, d = depth}
     local cx, top = bx + width / 2, platformTop()
@@ -610,8 +649,12 @@ local function queueBlock(key, label, items)
         spawnPlatform(platformPos, width, depth, memo)
         return 5   -- let the platform exist and be scaled before models drop onto it
     end
-    local labelPos = layoutToWorld(cx, front - PLATFORM_MARGIN - LABEL_DEPTH / 2, top + 0.05)
+    local labelPos = layoutToWorld(cx, front - PLATFORM_MARGIN - noteDepth - LABEL_DEPTH / 2, top + 0.05)
     queue[#queue + 1] = function() spawnLabel(label, labelPos, memo) end
+    if note then
+        local notePos = layoutToWorld(cx, front - PLATFORM_MARGIN - noteDepth / 2, top + 0.05)
+        queue[#queue + 1] = function() spawnLabel(note, notePos, memo, NOTE_FONT) end
+    end
     for _, p in ipairs(placed) do
         local it = p.item
         local pos = layoutToWorld(cx + p.x, front - p.z, top + SPAWN_HEIGHT)
@@ -923,7 +966,8 @@ local function importWarband(warband, mode, done)
         if #items > 0 then
             local name = tostring(warband["warband-name"] or "Warband")
             queueBlock("warband/" .. tostring(warband["warband-id"] or name) .. "/" .. mode,
-                name .. (mode == "slots" and " - slots" or ""), items)
+                name .. (mode == "slots" and " - slots" or ""), items,
+                mode == "models" and "To swap a model: drop another model of the same unit on it (while it stands here)" or nil)
         end
         flushQueue(function() done(#items, order, missing) end)
     end
@@ -1145,6 +1189,21 @@ function ACTIONS.import()
         .. "Then follow the steps in the import box.")
 end
 
+-- Extend UI shows / hides its drop area; the faction defaults to the one open in the console.
+function ACTIONS.extend()
+    extendOn = not extendOn
+    if extendOn and not extendF then extendF = sel.f or (index and index.factions[1].id) end
+    saveState()
+    setStatus(extendOn and "Drop any model into the Extend UI area to give it the TC model script. "
+        .. "Pick the faction for its activation icon there." or "Extend UI area hidden.")
+end
+
+function ACTIONS.extendf(fid)
+    extendF = fid
+    saveState()
+    render()
+end
+
 function ACTIONS.settings()
     listMode = (listMode == "settings") and "units" or "settings"
     render()
@@ -1171,6 +1230,37 @@ function ui_click(player, value, id)
     end
 end
 
+
+-- Global event: a model dropped into the Extend UI area gets the model script with the picked
+-- faction (models that already run it only change faction). The script is installed like the
+-- spawner's own self-update: state first, then the script, then reload.
+local function inExtendArea(pos)
+    local l, s = self.positionToLocal(pos), self.getScale()
+    local x, y = -l.x * s.x, -l.z * s.z   -- the console's coordinates (see toWorld)
+    local ax, top = areaOrigin()
+    return x >= ax and x <= ax + EXT_W and y >= top + EXT_GAP and y <= top + EXT_GAP + EXT_D
+end
+
+function onObjectDrop(player_color, obj)
+    if not extendOn or obj == nil or obj == self or not FIGURES[obj.name] then return end
+    if not inExtendArea(obj.getPosition()) then return end
+    local fe = factionById[extendF]
+    local fname = fe and fe.name or "no faction"
+    if obj.hasTag(MODEL_TAG) then
+        obj.call("setFaction", {f = extendF})
+        setStatus(obj.getName() .. " now shows the " .. fname .. " activation icon.")
+        return
+    end
+    if not modelScript then
+        setStatus("The model script isn't loaded (no connection?). Try Settings > Reload catalog.")
+        return
+    end
+    obj.UI.setXml("")
+    obj.script_state = JSON.encode({f = extendF, taken = true})
+    obj.setLuaScript(modelScript)
+    obj.reload()   -- replaces the object; obj isn't used afterwards
+    setStatus("Gave the TC model script to a model (" .. fname .. " activation icon).")
+end
 
 -- ============ WARBAND IMPORT CALLBACKS (XML) ============
 -- Unpacks a code from the converter page ("TCM1" + JSON, see docs/index.html) into the shape
@@ -1230,7 +1320,12 @@ local function importGo(mode)
         busy = false
         local text = (mode == "slots" and ("Spawned " .. n .. " slot(s) for ") or ("Imported " .. n .. " model(s) of "))
             .. tostring(warband["warband-name"]) .. "."
-        if mode == "slots" then text = text .. " Put a model on each slot to give it that member's name and rules." end
+        if mode == "slots" then
+            text = text .. " Put a model on each slot to give it that member's name and rules."
+        else
+            text = text .. " Don't like a model? Spawn its unit and drop another model on it (or one of your own "
+                .. "from the Extend UI area) while it's still on the platform."
+        end
         if #order > 0 then
             local parts = {}
             for _, name in ipairs(order) do parts[#parts + 1] = name .. (missing[name] > 1 and (" x" .. missing[name]) or "") end
@@ -1245,7 +1340,7 @@ function ui_importSlots() importGo("slots") end
 
 -- ============ SAVE / LOAD ============
 function onSave()
-    return JSON.encode({token = token, blocks = blocks, f = sel.f, sub = sel.sub,
+    return JSON.encode({token = token, blocks = blocks, f = sel.f, sub = sel.sub, extendOn = extendOn, extendF = extendF,
                         scriptsOn = scriptsOn})
 end
 
@@ -1269,6 +1364,7 @@ function onLoad(saved_data)
                 token = data.token
                 if type(data.blocks) == "table" then blocks = data.blocks end
                 sel.f, sel.sub = data.f, data.sub
+                extendOn, extendF = data.extendOn == true, data.extendF
                 if data.scriptsOn == false then scriptsOn = false end
             end
         end

@@ -13,8 +13,9 @@
 --  * Dice: drop any die onto the model. The real die stays, locked, floating on a half circle
 --    above the activation token, and moves with the model. Hover it and press 1-6 to turn it
 --    to that face; press 0 to take it off (it lands beside the model as a normal die).
---  * Swapping (warband members only): drop a catalog model of the same unit onto a warband
---    model; the dropped model takes over its name, rules, activation, dice and place.
+--  * Swapping (imported warbands, while still on their platform): drop a catalog model of the
+--    same unit, or any model from the spawner's Extend UI area, onto a warband model; the
+--    dropped model takes over its name, rules, activation, dice and place.
 --  * Image tokens: drop a token tagged TCUITokenSimple / TCUITokenEquipment onto the model.
 --    It shows as an icon on a half circle below the activation token; click it to remove it.
 --
@@ -35,7 +36,8 @@ local TOKEN_LAYERS = 6      -- stacked layers that form the token's edge
 local TOKEN_STEP   = 2      -- depth between two layers
 local ICON_SIZE    = 55     -- image tokens
 
-local MIN_HEIGHT   = 0.8    -- inches: markers float at least this high above the base's bottom
+local MIN_HEIGHT   = 1.2    -- inches: markers float at least this high above the base's bottom
+local FOOT_HEIGHT  = 1.35   -- estimated model height per inch of base width (see modelTop)
 
 -- Markers around the activation token: dice on a half circle above it, image tokens on one
 -- below it (as the player sees the model when spawned).
@@ -90,10 +92,14 @@ end
 -- ============ GEOMETRY ============
 -- Top of the whole model. The tagged object is usually just the base with the sculpt attached;
 -- attached parts have no collider, so getBounds and raycasts only see the base. The visual
--- bounds include them (and not the object's own UI panel; both tested in TTS).
+-- bounds include them on some models (a 3.9" Sorcerer measured right) but not on others
+-- (tested: ~1.4" Lieutenants measured 0.25", asset-bundle sculpts about their scale), so the
+-- height is also estimated from the base: models are at least FOOT_HEIGHT times as tall as
+-- their base is wide. The larger value wins. (Visual bounds don't include the UI panel.)
 local function modelTop()
     local b = self.getBounds()
-    local h = math.max(self.getVisualBoundsNormalized().size.y, MIN_HEIGHT)
+    local foot = math.max(b.size.x, b.size.z) * FOOT_HEIGHT
+    local h = math.max(self.getVisualBoundsNormalized().size.y, foot, MIN_HEIGHT)
     return b.center.y - b.size.y / 2 + h
 end
 
@@ -455,12 +461,23 @@ function becomeMember(params)
     saveState()
 end
 
+-- The spawner's Extend UI area: a model that already runs this script was dropped there, so
+-- only its faction (activation icon) changes.
+function setFaction(params)
+    state.f = params.f
+    state.taken = true
+    renderPanel()
+    saveState()
+end
+
 -- Swap: this model replaces a warband member. It takes over the member's name, rules,
 -- activation, tokens and dice, and its place on the table.
 function adoptMember(params)
     local p = params.state
     state.f, state.u, state.member = p.f, p.u, true
-    state.activated, state.taken, state.tokens = p.activated, true, p.tokens or {}
+    -- Swaps happen on the import platform, so the activation token shows once it's taken off
+    -- (onObjectDrop); its height is measured then, not while this model is still moving.
+    state.activated, state.taken, state.tokens = p.activated, false, p.tokens or {}
     state.dice = p.dice or {}
     self.setName(params.name)
     self.setDescription(params.desc)
@@ -475,14 +492,17 @@ function adoptMember(params)
     startFollowing()   -- carries the dice to the new place
 end
 
--- A catalog model of the same unit dropped onto this warband member replaces it. Only a
--- model that isn't a member itself can replace one, so two members bumping into each other
--- never swap.
+-- A model dropped onto this warband member replaces it: a catalog model of the same unit, or
+-- one without a unit (given the script in the spawner's Extend UI area: the player's own
+-- models). Only while the member still stands on its import platform (setting up the
+-- warband), so nothing swaps during a game. Only a model that isn't a member itself can
+-- replace one, so two members bumping into each other never swap.
 local function trySwap(obj)
-    if not state.member or not state.u or not obj.hasTag(MODEL_TAG) then return false end
+    if not state.member or not obj.hasTag(MODEL_TAG) then return false end
     local other = obj.getTable("state")
-    if type(other) ~= "table" or other.member or other.u ~= state.u then return false end
-    if not isOntoMe(obj.getPosition(), obj) then return false end
+    if type(other) ~= "table" or other.member then return false end
+    if other.u and other.u ~= state.u then return false end
+    if not isOntoMe(obj.getPosition(), obj) or not onPlatform() then return false end
     obj.call("adoptMember", {
         name = self.getName(), desc = self.getDescription(),
         pos = self.getPosition(), rot = self.getRotation(),
