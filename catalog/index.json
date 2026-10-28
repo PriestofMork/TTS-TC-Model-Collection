@@ -1,5 +1,5 @@
 {
- "version": 8,
+ "version": 9,
  "factions": [
   {
    "id": "new-antioch",
@@ -109,6 +109,436 @@
    ]
   },
   {
+   "id": "trench-pilgrims",
+   "name": "Trench Pilgrims",
+   "subfactions": [
+    {
+     "id": "procession-of-the-sacred-affliction",
+     "name": "Procession of the Sacred Affliction"
+    },
+    {
+     "id": "cavalcade-of-the-tenth-plague",
+     "name": "Cavalcade of the Tenth Plague"
+    },
+    {
+     "id": "war-pilgrimage-of-saint-methodius",
+     "name": "War Pilgrimage of Saint Methodius"
+    }
+   ],
+   "units": [
+    {
+     "id": "war-prophet",
+     "name": "War Prophet",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/trench-pilgrims/war-prophet.json"
+    },
+    {
+     "id": "castigator",
+     "name": "Castigator",
+     "count": 3,
+     "any": 2,
+     "subs": {
+      "procession-of-the-sacred-affliction": 1
+     },
+     "file": "units/trench-pilgrims/castigator.json"
+    },
+    {
+     "id": "communicant",
+     "name": "Communicant",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/trench-pilgrims/communicant.json"
+    },
+    {
+     "id": "anchorite-shrine",
+     "name": "Anchorite Shrine",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/trench-pilgrims/anchorite-shrine.json"
+    },
+    {
+     "id": "ecclesiastic-prisoner",
+     "name": "Ecclesiastic Prisoner",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/trench-pilgrims/ecclesiastic-prisoner.json"
+    },
+    {
+     "id": "stigmatic-nun",
+     "name": "Stigmatic Nun",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/trench-pilgrims/stigmatic-nun.json"
+    }
+   ]
+  },
+  {
+   "id": "iron-sultanate",
+   "name": "Iron Sultanate",
+   "subfactions": [
+    {
+     "id": "fidai-of-alamut-the-cabal-of-assassins",
+     "name": "Fidai of Alamut - The Cabal of Assassins"
+    },
+    {
+     "id": "house-of-wisdom",
+     "name": "House of Wisdom"
+    },
+    {
+     "id": "defenders-of-the-iron-wall",
+     "name": "Defenders of the Iron Wall"
+    }
+   ],
+   "units": [
+    {
+     "id": "yuzbasi-captain",
+     "name": "Yüzbaşı Captain",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/iron-sultanate/yuzbasi-captain.json",
+     "companion": [
+      "yuzbasicaptain"
+     ]
+    },
+    {
+     "id": "jabirean-alchemist",
+     "name": "Jabirean Alchemist",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/iron-sultanate/jabirean-alchemist.json"
+    },
+    {
+     "id": "sultanate-assassin",
+     "name": "Sultanate Assassin",
+     "count": 3,
+     "any": 1,
+     "subs": {
+      "fidai-of-alamut-the-cabal-of-assassins": 2
+     },
+     "file": "units/iron-sultanate/sultanate-assassin.json"
+    },
+    {
+     "id": "azeb",
+     "name": "Azeb",
+     "count": 3,
+     "any": 3,
+     "subs": {},
+     "file": "units/iron-sultanate/azeb.json"
+    },
+    {
+     "id": "lion-of-jabir",
+     "name": "Lion of Jabir",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/iron-sultanate/lion-of-jabir.json"
+    },
+    {
+     "id": "sultanate-sapper",
+     "name": "Sultanate Sapper",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/iron-sultanate/sultanate-sapper.json"
+    }
+   ]
+  },
+  {
+   "id": "heretic-legion",
+   "name": "Heretic Legion",
+   "subfactions": [
+    {
+     "id": "trench-ghosts",
+     "name": "Trench Ghosts"
+    },
+    {
+     "id": "knights-of-avarice",
+     "name": "Knights of Avarice"
+    },
+    {
+     "id": "heretic-naval-raiders",
+     "name": "Heretic Naval Raiders"
+    }
+   ],
+   "units": [
+    {
+     "id": "heretic-priest",
+     "name": "Heretic Priest",
+     "count": 7,
+     "any": 3,
+     "subs": {
+      "knights-of-avarice": 2,
+      "trench-ghosts": 2
+     },
+     "file": "units/heretic-legion/heretic-priest.json"
+    },
+    {
+     "id": "death-commando",
+     "name": "Death Commando",
+     "count": 2,
+     "any": 2,
+     "subs": {},
+     "file": "units/heretic-legion/death-commando.json",
+     "companion": [
+      "hereticdeathcommando"
+     ]
+    },
+    {
+     "id": "heretic-chorister",
+     "name": "Heretic Chorister",
+     "count": 5,
+     "any": 1,
+     "subs": {
+      "knights-of-avarice": 2,
+      "trench-ghosts": 2
+     },
+     "file": "units/heretic-legion/heretic-chorister.json",
+     "companion": [
+      "heretichorister",
+      "hereticchorister"
+     ]
+    },
+    {
+     "id": "anointed-heavy-infantry",
+     "name": "Anointed Heavy Infantry",
+     "count": 9,
+     "any": 4,
+     "subs": {
+      "knights-of-avarice": 2,
+      "trench-ghosts": 3
+     },
+     "file": "units/heretic-legion/anointed-heavy-infantry.json",
+     "companion": [
+      "annointedheavyinfantry"
+     ]
+    },
+    {
+     "id": "artillery-witch",
+     "name": "Artillery Witch",
+     "count": 7,
+     "any": 5,
+     "subs": {
+      "knights-of-avarice": 2
+     },
+     "file": "units/heretic-legion/artillery-witch.json"
+    },
+    {
+     "id": "heretic-trooper",
+     "name": "Heretic Trooper",
+     "count": 26,
+     "any": 21,
+     "subs": {
+      "knights-of-avarice": 2,
+      "trench-ghosts": 3
+     },
+     "file": "units/heretic-legion/heretic-trooper.json"
+    },
+    {
+     "id": "war-wolf-assault-beast",
+     "name": "War Wolf Assault Beast",
+     "count": 3,
+     "any": 1,
+     "subs": {
+      "knights-of-avarice": 2
+     },
+     "file": "units/heretic-legion/war-wolf-assault-beast.json"
+    },
+    {
+     "id": "wretched",
+     "name": "Wretched",
+     "count": 6,
+     "any": 4,
+     "subs": {
+      "knights-of-avarice": 2
+     },
+     "file": "units/heretic-legion/wretched.json"
+    }
+   ]
+  },
+  {
+   "id": "cult-of-the-black-grail",
+   "name": "Cult of the Black Grail",
+   "subfactions": [
+    {
+     "id": "dirge-of-the-great-hegemon",
+     "name": "Dirge of the Great Hegemon"
+    },
+    {
+     "id": "the-great-hunger",
+     "name": "The Great Hunger"
+    }
+   ],
+   "units": [
+    {
+     "id": "lord-of-tumors",
+     "name": "Lord of Tumors",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/lord-of-tumors.json"
+    },
+    {
+     "id": "corpse-guard",
+     "name": "Corpse Guard",
+     "count": 2,
+     "any": 2,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/corpse-guard.json"
+    },
+    {
+     "id": "amalgam",
+     "name": "Amalgam",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/amalgam.json"
+    },
+    {
+     "id": "grail-thrall",
+     "name": "Grail Thrall",
+     "count": 2,
+     "any": 2,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/grail-thrall.json"
+    },
+    {
+     "id": "fly-thrall",
+     "name": "Fly Thrall",
+     "count": 2,
+     "any": 2,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/fly-thrall.json"
+    },
+    {
+     "id": "herald-of-beelzebub",
+     "name": "Herald of Beelzebub",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/herald-of-beelzebub.json"
+    },
+    {
+     "id": "hounds-of-the-black-grail",
+     "name": "Hounds of the Black Grail",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/hounds-of-the-black-grail.json"
+    }
+   ]
+  },
+  {
+   "id": "court-of-the-seven-headed-serpent",
+   "name": "Court of the Seven-Headed Serpent",
+   "subfactions": [
+    {
+     "id": "wrath",
+     "name": "Wrath"
+    },
+    {
+     "id": "envy",
+     "name": "Envy"
+    },
+    {
+     "id": "lust",
+     "name": "Lust"
+    },
+    {
+     "id": "pride",
+     "name": "Pride"
+    },
+    {
+     "id": "sloth",
+     "name": "Sloth"
+    },
+    {
+     "id": "gluttony",
+     "name": "Gluttony"
+    },
+    {
+     "id": "greed",
+     "name": "Greed"
+    }
+   ],
+   "units": [
+    {
+     "id": "praetor",
+     "name": "Praetor",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/praetor.json"
+    },
+    {
+     "id": "sorcerer",
+     "name": "Sorcerer",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/sorcerer.json"
+    },
+    {
+     "id": "hell-knight",
+     "name": "Hell Knight",
+     "count": 3,
+     "any": 3,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/hell-knight.json"
+    },
+    {
+     "id": "hunter-of-the-left-hand-path",
+     "name": "Hunter of the Left-Hand Path",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/hunter-of-the-left-hand-path.json"
+    },
+    {
+     "id": "desecrated-saint",
+     "name": "Desecrated Saint",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/desecrated-saint.json"
+    },
+    {
+     "id": "pit-locust",
+     "name": "Pit Locust",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/pit-locust.json"
+    },
+    {
+     "id": "wretched",
+     "name": "Wretched",
+     "count": 3,
+     "any": 3,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/wretched.json",
+     "companion": [
+      "md_wretched_court"
+     ]
+    },
+    {
+     "id": "yoke-fiend",
+     "name": "Yoke Fiend",
+     "count": 4,
+     "any": 4,
+     "subs": {},
+     "file": "units/court-of-the-seven-headed-serpent/yoke-fiend.json"
+    }
+   ]
+  },
+  {
    "id": "mercenaries",
    "name": "Mercenaries",
    "subfactions": [],
@@ -132,24 +562,24 @@
     {
      "id": "goetic-warlock",
      "name": "Goetic Warlock",
-     "count": 5,
-     "any": 5,
+     "count": 6,
+     "any": 6,
      "subs": {},
      "file": "units/mercenaries/goetic-warlock.json"
     },
     {
      "id": "mamluk-faris",
      "name": "Mamluk Faris",
-     "count": 5,
-     "any": 5,
+     "count": 7,
+     "any": 7,
      "subs": {},
      "file": "units/mercenaries/mamluk-faris.json"
     },
     {
      "id": "mendelist-ammo-monk",
      "name": "Mendelist Ammo Monk",
-     "count": 4,
-     "any": 4,
+     "count": 6,
+     "any": 6,
      "subs": {},
      "file": "units/mercenaries/mendelist-ammo-monk.json"
     },
@@ -164,24 +594,24 @@
     {
      "id": "scripture-guardian",
      "name": "Scripture Guardian",
-     "count": 4,
-     "any": 4,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/mercenaries/scripture-guardian.json"
     },
     {
      "id": "sin-eater",
      "name": "Sin Eater",
-     "count": 4,
-     "any": 4,
+     "count": 6,
+     "any": 6,
      "subs": {},
      "file": "units/mercenaries/sin-eater.json"
     },
     {
      "id": "sister-of-saint-cosmas",
      "name": "Sister of Saint Cosmas",
-     "count": 4,
-     "any": 4,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/mercenaries/sister-of-saint-cosmas.json",
      "companion": [
@@ -191,8 +621,8 @@
     {
      "id": "witchburner",
      "name": "Witchburner",
-     "count": 3,
-     "any": 3,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/witchburner.json"
     },
@@ -205,6 +635,17 @@
      "file": "units/mercenaries/golem.json",
      "companion": [
       "md_takwincreation_golem"
+     ]
+    },
+    {
+     "id": "dogs",
+     "name": "Dogs",
+     "count": 1,
+     "any": 1,
+     "subs": {},
+     "file": "units/mercenaries/dogs.json",
+     "companion": [
+      "trenchdog"
      ]
     }
    ]
