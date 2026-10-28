@@ -15,6 +15,9 @@
 --   General, subfaction C   {"s":[C]}                   made for C
 --   Import, context X       {"s":[],"i":[X],"k":"i"}    preferred pick for X's warband imports;
 --                                                       k = "i": s carries no theme
+-- A model that sits only in Import rows (no General copy) also counts as General for those
+-- contexts (export applies this when merging), so moving a model into an Import row is enough;
+-- copy it only to keep it under another theme too (e.g. vanilla Azebs picked for a subfaction).
 -- X is "_" (vanilla) or a subfaction id. A faction's mercenaries use the faction id instead of
 -- "_" (Heretic Legion's vanilla pick of Goetic Warlocks: i = ["heretic-legion"]); "_" on a
 -- mercenary is the Mercenaries board's own vanilla pick. Older tags with several entries are
