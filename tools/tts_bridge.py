@@ -13,6 +13,11 @@
         come back as JSON. (TTS doesn't actually send return values back as the docs say, so
         the code is wrapped to print its result as "RESULT: ...".)
 
+    python tools/tts_bridge.py push <script file> --guid <object guid>
+        Puts a local script file into an object in the game and reloads the object, e.g. to
+        try tts/spawner.lua before pushing it to GitHub. (Code on the command line is limited
+        to ~32 KB on Windows; this reads the file instead.) The object keeps its GUID.
+
 Caveat: while the listener runs, TTS treats it as an external editor. Opening the script
 editor on an object WITHOUT a script then sends it here instead of opening the in-game
 editor, so stop the listener before pasting a script into a fresh object.
@@ -114,9 +119,25 @@ def main():
     p_run.add_argument("--guid", default="-1")
     p_run.add_argument("--log", type=Path, default=DEFAULT_LOG)
     p_run.add_argument("--wait", type=float, default=5)
+    p_push = sub.add_parser("push")
+    p_push.add_argument("file", type=Path)
+    p_push.add_argument("--guid", required=True)
+    p_push.add_argument("--log", type=Path, default=DEFAULT_LOG)
+    p_push.add_argument("--wait", type=float, default=5)
     args = parser.parse_args()
     if args.cmd == "listen":
         listen(args.log)
+    elif args.cmd == "push":
+        script = args.file.read_text(encoding="utf-8")
+        # Long brackets need a level that doesn't occur in the script.
+        level = 1
+        while ("]" + "=" * level + "]") in script:
+            level += 1
+        eq = "=" * level
+        code = ('local o = getObjectFromGUID("%s") if not o then return "no object %s" end '
+                'o.setLuaScript([%s[%s]%s]) o.reload() return "reloaded %s"'
+                % (args.guid, args.guid, eq, script, eq, args.guid))
+        run(code, "-1", args.log, args.wait)
     else:
         run(args.code, args.guid, args.log, args.wait)
 

@@ -2,16 +2,16 @@
 -- TC MINIATURES - SPAWNER
 -- =============================================
 -- Contains no models. On load it fetches catalog/version.json and catalog/index.json from
--- GitHub. The spawner itself is the hub of a token menu: clicking it lays out faction and
--- action tokens beside it, a faction token lays out that faction's subfactions and units, and
--- clicking a unit fetches that unit's file and spawns its models in labelled rows behind the
--- spawner (clicking it again removes them).
+-- GitHub. The spawner (the hub, a tile with art) draws a side console as object XML UI: status
+-- beside it, action icons below it, then faction icons with the open faction's unit list next
+-- to them. Clicking a unit fetches that unit's file and spawns its models on a labelled
+-- platform to the right of the console (clicking it again removes them).
 --
 -- Spawned objects carry the tag TCM_Spawned and a memo "<token>|<faction>/<unit>". The token
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 8
+local SPAWNER_VERSION = 9
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -23,14 +23,18 @@ local PLATFORM_NAME  = "TC spawn platform"
 
 -- Layout, in world units relative to the spawner (follows its position and rotation, not its
 -- scale). The player reading the spawner sits on its local +z side (tested in TTS: an XML panel
--- with rotation "0 0 180" reads upright from there). Units spawn behind the spawner (local -z),
--- the token menu lies beside and in front of it.
-local LAYOUT_GAP    = 1.5    -- between the spawner's back edge and the first label
-local MAX_ROW_WIDTH = 30     -- rows wrap after this width
+-- with rotation "0 0 180" reads upright from there). The console runs from the hub toward the
+-- player; the spawn area lies to its right, its top edge level with the hub's far edge.
+local AREA_GAP      = 1.0    -- between the console and the spawn area
+-- Each unit is a block (its platform). Blocks are packed into an area AREA_WIDTH wide, rows from
+-- the top edge toward the player, nearest free spot first, so a removed unit's space is reused.
+local AREA_WIDTH    = 27     -- fits two full-width units (MAX_ROW_WIDTH + margins) side by side
+local MAX_ROW_WIDTH = 12     -- a unit's models wrap after this width
 local MODEL_PAD     = 0.4    -- space between models in a row
 local ROW_GAP       = 0.6    -- space between rows
-local LABEL_DEPTH   = 1.4    -- room reserved for a unit's label above its first row
-local BLOCK_GAP     = 1.0    -- space between two units' platforms
+local LABEL_DEPTH   = 1.1    -- room reserved for a unit's label in front of its first row
+local LABEL_CHAR    = 0.4    -- estimated label width per character at LABEL_FONT
+local BLOCK_GAP     = 0.8    -- space between two units' platforms
 
 -- Each unit stands on its own locked platform, raised above the surface the spawner stands
 -- on, so spawned models never land in terrain or on the board.
@@ -46,47 +50,40 @@ local MODEL_YAW = 0
 -- 3D text lying flat on the table: pitch 90. Yaw 180 reads upright for the panel's reader.
 local LABEL_PITCH = 90
 local LABEL_YAW   = 180
-local LABEL_FONT  = 48
+local LABEL_FONT  = 36
 
 local BATCH_SIZE = 15        -- objects spawned or destroyed per frame
 
-local UI_MARGIN = 5          -- import box: extra lift above the object's top face, in UI units
-local UI_SCALE  = 1
+local UI_MARGIN = 5          -- console: extra lift above the hub's top face, in UI units
 
--- Token menu. Tokens are ordinary locked objects with buttons whose function_owner is this
--- script, so they carry no script themselves. Their memo is "<token>|<action>:<arg>".
-local UI_TAG       = "TCM_UI"
-local BU           = 500     -- button units per world inch (TO TUNE in TTS)
-local FONT         = 0.22    -- label text height, world inches
-local LINE         = 0.3     -- label line height, world inches
-local TOKEN_SIZE   = 1.8     -- image and faction tokens: longest side
-local CHIP_W       = 3.0     -- plain chips (units, subfactions, settings)
-local CHIP_D       = 1.2     -- unit chips (name on up to two lines + count)
-local SMALL_D      = 0.8     -- one-line chips
-local GAP          = 0.3     -- between chips
-local UNIT_COLUMNS = 5
-local THICKNESS    = 0.2
--- Turn tokens / button text by 180 if they read upside down for the player at the spawner.
-local ART_YAW      = 0       -- TO TUNE: image orientation of spawned tokens
-local BUTTON_YAW   = 180     -- TO TUNE: button text orientation on an object with yaw 0
--- Press: the token hops this high and drops back; the landing makes TTS's normal collision
--- click (scripts can't play sound effects). Then it is locked again at its old place.
-local PRESS_LIFT   = 0.3
+-- Side console, in world inches (the root panel undoes the hub's scale: 100 UI units = 1").
+local CON_GAP    = 0.3       -- spacing between console parts
+local STATUS_W   = 4.0       -- status box beside the hub
+local ACTION     = 1.0       -- action icons below the hub
+local ICON       = 1.1       -- faction icons
+local LIST_W     = 4.6       -- unit list column
+local ROW_H      = 0.46      -- unit rows
+local TAB_H      = 0.4       -- subfaction tabs
+local TAB_CHAR   = 0.12      -- estimated tab width per character
+local COL_TEXT   = "#EEE6D8"
+local COL_BOX    = "#0D0B0BD9"                          -- status / import background
+local COL_ROW    = "#2A2624|#3A3532|#1E1B1A|#2A2624"    -- normal|hover|pressed|disabled
+local COL_ON     = "#7F2119|#9A2A20|#5E1812|#7F2119"    -- unit on the table / chosen tab
+local COL_ALL    = "#6B5420|#80662A|#4E3D17|#6B5420"    -- "Spawn whole faction"
+local COL_ICON   = "#FFFFFF|#FFFFFF|#CCCCCC|#FFFFFF"
+local COL_DIM    = "#707070|#B0B0B0|#909090|#707070"    -- faction icons that aren't open
 
-local CLEAR    = {0, 0, 0, 0}
-local HOVER    = {1, 1, 1, 0.12}
-local PRESSED  = {1, 1, 1, 0.25}
-local STRIP    = {0.05, 0.04, 0.04, 0.85}   -- dark band behind labels on the table
-local TEXT     = {0.93, 0.89, 0.81}
-local CHIP_OFF = {0.16, 0.15, 0.14}
-local CHIP_ON  = {0.5, 0.13, 0.1}           -- unit on the table / subfaction chosen
-local CHIP_ALL = {0.42, 0.33, 0.12}         -- "Spawn whole faction"
-local DIMMED   = {0.45, 0.45, 0.45}         -- faction tokens that aren't open
+-- The hub's invisible click button (createButton).
+local BU         = 500       -- button units per world inch (measured)
+local BUTTON_YAW = 0         -- button text reads upright from the object's local +z side (tested)
+local CLEAR      = {0, 0, 0, 0}
+local HOVER      = {1, 1, 1, 0.12}
+local PRESSED    = {1, 1, 1, 0.25}
+local UI_TAG     = "TCM_UI"  -- menu tokens of v8 (spawned objects); leftovers are removed on load
 
--- Art for the action tokens (Trench Crusade art by Mike Franchina, hotlinked from ArtStation).
+-- Art for the action icons (Trench Crusade art by Mike Franchina, hotlinked from ArtStation).
 local ART = {
     import   = "https://cdnb.artstation.com/p/assets/images/images/031/677/223/large/mike-franchina-procession-pilgrimage-web.jpg?1604303199",
-    ready    = "https://cdnb.artstation.com/p/assets/images/images/022/892/925/large/mike-franchina-sword-saint-female.jpg?1577126961",
     settings = "https://cdnb.artstation.com/p/assets/images/images/031/363/803/large/mike-franchina-flak-battery2.jpg?1603392122",
     clear    = "https://cdnb.artstation.com/p/assets/images/images/024/247/491/large/mike-franchina-cardinal-of-malady.jpg?1581794458",
 }
@@ -107,26 +104,36 @@ local factionById  = {}
 local token        = nil
 local sel          = {f = nil, sub = nil}
 local spawned      = {}      -- "faction/unit" -> true
-local cursorZ      = 0       -- next free row position (world units behind LAYOUT_GAP)
+local blocks       = {}      -- "faction/unit" -> {x, z, w, d}: its platform in layout units
 local busy         = false
 local status       = "Loading catalog..."
 local renderPending = false
 local unitCache    = {}      -- unit file -> decoded entries (for the loaded catalog version)
-local layoutEdge   = nil     -- distance from the spawner's centre to the first row (world units)
 local scriptsOn    = true    -- put tts/model.lua into spawned models
 local modelScript  = nil     -- tts/model.lua, fetched on load
-local importing    = false   -- the panel shows the warband import box
+local listMode     = "units" -- what the console's list column shows: "units", "import", "settings"
+local collapsed    = false   -- the hub was clicked: only the status stays
 local importText   = ""      -- what was pasted; kept here, the box itself isn't re-rendered
-local lastColor    = nil     -- player who clicked last (long messages also go to their chat)
 
 -- ============ UTIL ============
 local function xmlEscape(s)
     return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
 end
 
+-- The spawner is always the same object: a Custom_Tile with the Wolf art (published at scale
+-- 2, 1, 2). HUB_SIZE is its size at scale 1, measured in TTS. It isn't measured at run time
+-- because getBoundsNormalized also counts the object's buttons.
+local HUB_SIZE = {x = 1.4775, y = 0.2, z = 2}
+
+-- The spawner's size in world units, rotation ignored.
+local function hubBounds()
+    local s = self.getScale()
+    return {x = HUB_SIZE.x * s.x, y = HUB_SIZE.y * s.y, z = HUB_SIZE.z * s.z}
+end
+
 local function uiHeight()
-    -- getBoundsNormalized ignores rotation but includes scale; UI units are 100 per local unit.
-    local halfLocal = self.getBoundsNormalized().size.y / 2 / self.getScale().y
+    -- UI units are 100 per local unit.
+    local halfLocal = hubBounds().y / 2 / self.getScale().y
     return -math.ceil(halfLocal * 100 + UI_MARGIN)
 end
 
@@ -135,21 +142,8 @@ local function tableY()
     return b.center.y - b.size.y / 2
 end
 
--- Half the spawner's footprint (world units).
-local function hubHalf()
-    local b = self.getBoundsNormalized().size
-    return math.max(b.x, b.z) / 2
-end
-
--- Layout position -> world position. x runs to the player's right and z away from them,
--- both in world units.
-local function layoutEdgeNow()
-    -- Fixed once units are on the table, so new rows line up with existing ones.
-    return layoutEdge or (hubHalf() + LAYOUT_GAP)
-end
-
--- Spawner-relative (x, z) -> world position at world height y. positionToWorld takes local
--- (scaled) units, so world units are divided by the scale.
+-- Spawner-relative (x, z) -> world position at world height y: x to the player's right, z away
+-- from them. positionToWorld takes local (scaled) units, so world units are divided by the scale.
 local function toWorld(x, z, y)
     local s = self.getScale()
     local pos = self.positionToWorld(Vector(-x / s.x, 0, -z / s.z))
@@ -157,9 +151,20 @@ local function toWorld(x, z, y)
     return pos
 end
 
--- Layout (x, z): z counts from where the unit rows start, behind the spawner.
+-- The spawn area's left edge (x) and top edge (z), spawner-relative: right of the console's
+-- widest part, level with the hub's far edge.
+local function areaOrigin()
+    local hb = hubBounds()
+    local hw = hb.x / 2
+    local right = math.max(hw + CON_GAP + STATUS_W, -hw + ICON + CON_GAP + LIST_W)
+    return right + AREA_GAP, hb.z / 2
+end
+
+-- Layout (x, z) -> world: x from the area's left edge to the right, z from its top edge toward
+-- the player.
 local function layoutToWorld(x, z, y)
-    return toWorld(x, layoutEdgeNow() + z, y)
+    local x0, top = areaOrigin()
+    return toWorld(x0 + x, top - z, y)
 end
 
 local function platformTop()
@@ -255,97 +260,162 @@ local function subName(fe, id)
     return tostring(id)
 end
 
--- ============ STATUS / UI ============
+-- ============ STATUS / CONSOLE ============
 local render
 
--- Wraps text at spaces into lines of at most `width` characters, at most maxLines lines.
--- (Patterns are fine here: status texts are short.)
-local function wrap(text, width, maxLines)
-    local lines, line = {}, ""
-    for word in string.gmatch(tostring(text), "%S+") do
-        if line ~= "" and #line + 1 + #word > width then
-            lines[#lines + 1] = line
-            line = word
-        else
-            line = (line == "" and word) or (line .. " " .. word)
-        end
-    end
-    if line ~= "" then lines[#lines + 1] = line end
-    if maxLines and #lines > maxLines then
-        local short = {}
-        for i = 1, maxLines do short[i] = lines[i] end
-        short[maxLines] = short[maxLines] .. " ..."
-        return short, true
-    end
-    return lines, false
-end
-
-local STATUS_WIDTH, STATUS_LINES = 44, 4
-
--- The status is drawn as buttons, so changing it re-renders (buttons and the import box).
--- Text too long for the strip in front of the spawner also goes to the clicking player's chat.
 local function setStatus(text)
     status = text
-    local _, cutOff = wrap(text, STATUS_WIDTH, STATUS_LINES)
-    if cutOff and lastColor then pcall(function() printToColor("[TC Miniatures] " .. text, lastColor) end) end
     render()
 end
 
--- Button sizes on an object scale with it; dividing by the scale makes them world-sized.
--- Returns the local height just above the object's top face and the inverse scale.
-local function buttonFrame(obj)
-    local s, b = obj.getScale(), obj.getBoundsNormalized().size
-    return (b.y / 2 + 0.02) / s.y, {1 / s.x, 1 / s.y, 1 / s.z}, b, s
-end
-
--- The spawner itself is the hub token: an invisible button over it opens the menu, and a dark
--- strip in front of it (toward the player) shows the status.
+-- The hub's own button: one invisible button over it (clicking collapses / expands the console).
 local function drawHub()
     self.clearButtons()
-    local top, inv, b, s = buttonFrame(self)
+    local s, b = self.getScale(), hubBounds()
     self.createButton({click_function = "tok_hub", function_owner = self, label = "",
-        position = {0, top, 0}, rotation = {0, BUTTON_YAW, 0}, scale = inv,
+        position = {0, (b.y / 2 + 0.02) / s.y, 0}, rotation = {0, BUTTON_YAW, 0}, scale = {1 / s.x, 1 / s.y, 1 / s.z},
         width = b.x * BU, height = b.z * BU, color = CLEAR, hover_color = HOVER, press_color = PRESSED})
-    local lines = wrap(status, STATUS_WIDTH, STATUS_LINES)
-    local depth = 0.2 + #lines * LINE
-    self.createButton({click_function = "tok_none", function_owner = self, label = table.concat(lines, "\n"),
-        position = {0, top, (b.z / 2 + 0.3 + depth / 2) / s.z}, rotation = {0, BUTTON_YAW, 0}, scale = inv,
-        width = 7 * BU, height = depth * BU, font_size = FONT * BU,
-        color = STRIP, hover_color = STRIP, press_color = STRIP, font_color = TEXT})
 end
 
-function tok_none() end
+-- The images the console uses, by name (setCustomAssets fails on a nil URL).
+local function loadAssets()
+    local assets = {}
+    for name, url in pairs(ART) do assets[#assets + 1] = {name = "a_" .. name, url = url} end
+    for id, url in pairs(ICONS) do assets[#assets + 1] = {name = "f_" .. id, url = url} end
+    self.UI.setCustomAssets(assets)
+end
 
--- The only XML left: the warband import box, shown on the spawner while importing.
--- Trench Companion's export is too big for a TTS text box (Unity cuts UI text at ~16,000
--- characters), so players turn it into a short code on the converter page first. TTS can't
--- open a browser from a script, so the address is shown in a read-only box to copy. The code
--- box is single-line (only draws the visible part) and read once in onEndEdit; the text lives
--- in importText because re-rendering the panel empties the box.
-local function buildImportXml()
+-- Warband import box (in the list column while importing). Trench Companion's export is too big
+-- for a TTS text box (Unity cuts UI text at ~16,000 characters), so players turn it into a short
+-- code on the converter page first. TTS can't open a browser from a script, so the address is
+-- shown in a read-only box to copy. The code box is single-line (only draws the visible part)
+-- and read once in onEndEdit; the text lives in importText because re-rendering empties the box.
+-- Returns the panel's content and its height in UI units.
+local function importBox()
     local x, height = {}, 24   -- 24 = top + bottom padding
     local function row(h, el)
         height = height + h + 6   -- 6 = layout spacing
         x[#x + 1] = el
     end
-    row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">Import warband</Text>')
-    row(22, '<Text preferredHeight="22" fontSize="15" alignment="MiddleLeft">1. Open this page in your browser:</Text>')
-    row(36, '<InputField preferredHeight="36" fontSize="15" readOnly="true" lineType="SingleLine">'
+    row(22, '<Text preferredHeight="22" fontSize="17" alignment="MiddleLeft">1. Open this page in your browser:</Text>')
+    row(36, '<InputField preferredHeight="36" fontSize="17" readOnly="true" lineType="SingleLine">'
         .. CODE_PAGE .. '</InputField>')
-    row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">2. Paste your Trench Companion TTS export there '
+    row(48, '<Text preferredHeight="48" fontSize="17" alignment="MiddleLeft">2. Paste your Trench Companion TTS export there '
         .. 'and copy the code. 3. Paste the code here:</Text>')
-    row(40, '<InputField id="importBox" preferredHeight="40" fontSize="16" lineType="SingleLine" '
+    row(40, '<InputField id="importBox" preferredHeight="40" fontSize="17" lineType="SingleLine" '
         .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
     row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
-        .. '<Button onClick="ui_importModels" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn models</Button>'
-        .. '<Button onClick="ui_importSlots" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn slots</Button>'
-        .. '<Button onClick="ui_importCancel">Cancel</Button></HorizontalLayout>')
-    row(60, '<Text preferredHeight="60" fontSize="15" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
-    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="17"/></Defaults>'
-        .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="460" height="' .. height
-        .. '" scale="' .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">'
-        .. '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
-        .. table.concat(x) .. '</VerticalLayout></Panel>'
+        .. '<Button onClick="ui_importModels" colors="' .. COL_ON .. '" fontSize="19">Spawn models</Button>'
+        .. '<Button onClick="ui_importSlots" colors="' .. COL_ROW .. '" fontSize="19">Spawn slots</Button>'
+        .. '<Button onClick="ui_importCancel" colors="' .. COL_ROW .. '" fontSize="19">Cancel</Button></HorizontalLayout>')
+    return '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
+        .. table.concat(x) .. '</VerticalLayout>', height
+end
+
+-- The console as one XML panel. Coordinates are world inches relative to the hub's centre,
+-- x to the player's right and y away from them (UI y = away: the root is turned "0 0 180" to
+-- read from the player's side); the root panel's scale undoes the hub's, so 100 UI units = 1".
+-- Clicks go to ui_click with the element's id as the action ("faction:<id>", "unit:<f>/<u>"...).
+local function buildXml()
+    local hb, sc = hubBounds(), self.getScale()
+    local hw, hd = hb.x / 2, hb.z / 2
+    local out = {}
+    local function n(v) return string.format("%.1f", v * 100) end
+    local function put(tag, x, y, w, h, attrs, inner)
+        out[#out + 1] = '<' .. tag .. ' position="' .. n(x) .. ' ' .. n(y) .. ' 0" width="' .. n(w) .. '" height="' .. n(h)
+            .. '" ' .. (attrs or '') .. '>' .. (inner or '') .. '</' .. tag .. '>'
+    end
+    local function text(x, y, w, h, str, attrs) put("Text", x, y, w, h, attrs, xmlEscape(str)) end
+    -- A clickable row: name on the left, an optional count on the right.
+    local function row(x, y, w, h, id, colors, name, count)
+        local inner = '<Text width="' .. n(w - 0.24) .. '" height="' .. n(h) .. '" alignment="MiddleLeft">' .. xmlEscape(name) .. '</Text>'
+        if count then
+            inner = inner .. '<Text width="' .. n(w - 0.24) .. '" height="' .. n(h) .. '" alignment="MiddleRight">' .. count .. '</Text>'
+        end
+        put("Button", x, y, w, h, 'id="' .. xmlEscape(id) .. '" onClick="ui_click" colors="' .. colors .. '"', inner)
+    end
+
+    -- Status beside the hub.
+    local sx = hw + CON_GAP + STATUS_W / 2
+    put("Panel", sx, 0, STATUS_W, 2 * hd, 'color="' .. COL_BOX .. '"',
+        '<Text width="' .. n(STATUS_W - 0.3) .. '" height="' .. n(2 * hd - 0.3) .. '" alignment="UpperLeft" fontSize="26">'
+        .. xmlEscape(status) .. '</Text>')
+
+    if index and not collapsed then
+        -- Action icons below the hub, with their names under them.
+        local ay = -hd - CON_GAP - ACTION / 2
+        local actions = {{"import", "Import"}, {"settings", "Settings"}, {"clear", "Clear all"}}
+        for i, a in ipairs(actions) do
+            local x = -hw + ACTION / 2 + (i - 1) * (ACTION + 0.25)
+            put("Button", x, ay, ACTION, ACTION, 'id="' .. a[1] .. '" onClick="ui_click" image="a_' .. a[1] .. '" colors="' .. COL_ICON .. '"')
+            text(x, ay - ACTION / 2 - 0.15, ACTION + 0.25, 0.28, a[2], 'fontSize="20" alignment="MiddleCenter"'
+                .. (listMode == a[1] and ' color="#E0B050"' or ''))
+        end
+
+        -- Faction icons in a column.
+        local top = ay - ACTION / 2 - 0.3 - CON_GAP
+        for i, f in ipairs(index.factions) do
+            local open = sel.f == nil or sel.f == f.id
+            put("Button", -hw + ICON / 2, top - ICON / 2 - (i - 1) * (ICON + 0.15), ICON, ICON,
+                'id="faction:' .. f.id .. '" onClick="ui_click" image="f_' .. (ICONS[f.id] and f.id or "default")
+                .. '" colors="' .. (open and COL_ICON or COL_DIM) .. '"')
+        end
+
+        -- The list column next to them.
+        local lx = -hw + ICON + CON_GAP
+        local cx, y = lx + LIST_W / 2, top
+        local fe = factionById[sel.f]
+        if listMode == "import" then
+            local inner, h = importBox()
+            text(cx, y - 0.22, LIST_W, 0.44, "Import warband", 'fontSize="30" fontStyle="Bold" alignment="MiddleLeft"')
+            y = y - 0.5
+            put("Panel", cx, y - h / 200, LIST_W, h / 100, 'color="' .. COL_BOX .. '"', inner)
+        elseif listMode == "settings" then
+            text(cx, y - 0.22, LIST_W, 0.44, "Settings", 'fontSize="30" fontStyle="Bold" alignment="MiddleLeft"')
+            y = y - 0.5
+            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "scripts", COL_ROW, scriptsOn and "Model scripts: on" or "Model scripts: off")
+            y = y - ROW_H - 0.06
+            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "reload", COL_ROW, "Reload catalog")
+        elseif not fe then
+            text(cx, y - 0.4, LIST_W, 0.8, "Pick a faction on the left.", 'fontSize="26" alignment="UpperLeft"')
+        else
+            text(cx, y - 0.22, LIST_W, 0.44, fe.name, 'fontSize="30" fontStyle="Bold" alignment="MiddleLeft"')
+            y = y - 0.5
+            -- Filter tabs: All models, Vanilla, each subfaction; wrapped into rows.
+            local tabs = {{id = "", name = "All models"}, {id = "_", name = "Vanilla"}}
+            for _, sf in ipairs(fe.subfactions or {}) do tabs[#tabs + 1] = sf end
+            local tx = lx
+            for _, t in ipairs(tabs) do
+                local w = 0.3 + #t.name * TAB_CHAR
+                if tx > lx and tx + w > lx + LIST_W then tx, y = lx, y - TAB_H - 0.08 end
+                local chosen = (t.id == "" and sel.sub == nil) or t.id == sel.sub
+                put("Button", tx + w / 2, y - TAB_H / 2, w, TAB_H, 'id="sub:' .. t.id .. '" onClick="ui_click" fontSize="20" textColor="'
+                    .. COL_TEXT .. '" colors="' .. (chosen and COL_ON or COL_ROW) .. '"', xmlEscape(t.name))
+                tx = tx + w + 0.08
+            end
+            y = y - TAB_H - 0.2
+            -- Units with their model counts under the filter, then the mercenaries it hires.
+            local any = false
+            local function unitRow(f, u, merc)
+                local count, fallback = unitCount(u)
+                if count == 0 then return end
+                any = true
+                local key = unitKey(f, u.id)
+                row(cx, y - ROW_H / 2, LIST_W, ROW_H, "unit:" .. key, spawned[key] and COL_ON or COL_ROW,
+                    u.name .. (merc and " (merc)" or "") .. (fallback and " (vanilla)" or ""), count)
+                y = y - ROW_H - 0.06
+            end
+            for _, u in ipairs(fe.units) do unitRow(fe.id, u) end
+            for _, u in ipairs(hiredUnits(fe)) do unitRow(MERC, u, true) end
+            y = y - 0.1
+            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "all", any and COL_ALL or COL_ROW,
+                any and "Spawn whole faction" or "No models for this filter")
+        end
+    end
+
+    return '<Defaults><Text color="' .. COL_TEXT .. '" fontSize="24"/><Button textColor="' .. COL_TEXT .. '" fontSize="24"/></Defaults>'
+        .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="0" height="0" scale="'
+        .. 1 / sc.x .. ' ' .. 1 / sc.z .. ' 1">' .. table.concat(out) .. '</Panel>'
 end
 
 -- Coalesce several render() calls in one frame.
@@ -355,7 +425,7 @@ function render()
     Wait.frames(function()
         renderPending = false
         drawHub()
-        self.UI.setXml(importing and buildImportXml() or "")
+        self.UI.setXml(buildXml())
     end, 1)
 end
 
@@ -484,34 +554,48 @@ end
 -- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {data=, w=, d=, state=, raw=,
 -- size=, label=} (see spawnModel; label = small text on the item); w/d come from the intake
 -- because bounds aren't known before the models load.
+-- Nearest free spot for a w x d block: the smallest z, then the leftmost x, at which it overlaps
+-- no other block (bottom-left packing). Candidates are the area's edge and the edges of the
+-- blocks already there. x is the block's left edge, from 0 (the area's left edge); z its top
+-- edge. A block wider than the area gets a row of its own.
+local function findSpot(w, d)
+    local left = 0
+    local xs, zs = {left}, {0}
+    for _, b in pairs(blocks) do
+        xs[#xs + 1] = b.x + b.w + BLOCK_GAP
+        zs[#zs + 1] = b.z + b.d + BLOCK_GAP
+    end
+    table.sort(xs)
+    table.sort(zs)
+    local function free(x, z)
+        for _, b in pairs(blocks) do
+            if x < b.x + b.w + BLOCK_GAP and b.x < x + w + BLOCK_GAP
+                and z < b.z + b.d + BLOCK_GAP and b.z < z + d + BLOCK_GAP then return false end
+        end
+        return true
+    end
+    for _, z in ipairs(zs) do
+        for _, x in ipairs(xs) do
+            if (x + w <= left + AREA_WIDTH or x == left) and free(x, z) then return x, z end
+        end
+    end
+    return left, zs[#zs]   -- not reached: the last z is behind every block
+end
+
 local function queueBlock(key, label, items)
     local memo = token .. "|" .. key
-    if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the spawner again
-    layoutEdge = layoutEdgeNow()
 
-    local top = platformTop()
-    local blockStart = cursorZ
-    local z = blockStart + PLATFORM_MARGIN
-    local jobs = {}
-
-    -- Label and rows are centred on the spawner.
-    local labelPos = layoutToWorld(0, z + LABEL_DEPTH / 2, top + 0.05)
-    jobs[#jobs + 1] = function() spawnLabel(label, labelPos, memo) end
-    z = z + LABEL_DEPTH
+    -- First the block's own layout, relative to its centre line (x) and its edge facing the
+    -- player (z, growing away from them): the label there, the rows behind it.
+    local z = PLATFORM_MARGIN + LABEL_DEPTH
+    local placed = {}   -- {item, x, z}
 
     local x, rowDepth, row, widest = 0, 0, {}, 0   -- x = width used so far in this row
     local function flushRow()
-        local zc = z + rowDepth / 2
         local rowWidth = x - MODEL_PAD
         if rowWidth > widest then widest = rowWidth end
         for _, item in ipairs(row) do
-            local pos = layoutToWorld(item.x - rowWidth / 2, zc, top + SPAWN_HEIGHT)
-            local it = item.item
-            jobs[#jobs + 1] = function() spawnModel(it.data, pos, memo, it.state, it.raw, it.size) end
-            if it.label then
-                local lpos = layoutToWorld(item.x - rowWidth / 2, zc, top + 0.35)
-                jobs[#jobs + 1] = function() spawnLabel(it.label, lpos, memo, 18) end
-            end
+            placed[#placed + 1] = {item = item.item, x = item.x - rowWidth / 2, z = z + rowDepth / 2}
         end
         z = z + rowDepth + ROW_GAP
         x, rowDepth, row = 0, 0, {}
@@ -526,17 +610,32 @@ local function queueBlock(key, label, items)
     end
     if #row > 0 then flushRow() end
 
-    -- The platform covers the label (estimated at ~0.5" per character) and the widest row.
-    local depth = z - ROW_GAP + PLATFORM_MARGIN - blockStart
-    local width = math.max(widest, #label * 0.5) + 2 * PLATFORM_MARGIN
-    local platformPos = layoutToWorld(0, blockStart + depth / 2, top - PLATFORM_THICKNESS / 2)
+    -- The platform covers the label and the widest row. Then the block gets its place.
+    local depth = z - ROW_GAP + PLATFORM_MARGIN
+    local width = math.max(widest, #label * LABEL_CHAR) + 2 * PLATFORM_MARGIN
+    local bx, bz = findSpot(width, depth)
+    blocks[key] = {x = bx, z = bz, w = width, d = depth}
+    local cx, top = bx + width / 2, platformTop()
+
+    -- Layout z grows toward the player, so the block's player edge is at bz + depth.
+    local front = bz + depth
+    local platformPos = layoutToWorld(cx, bz + depth / 2, top - PLATFORM_THICKNESS / 2)
     queue[#queue + 1] = function()
         spawnPlatform(platformPos, width, depth, memo)
         return 5   -- let the platform exist and be scaled before models drop onto it
     end
-    for _, job in ipairs(jobs) do queue[#queue + 1] = job end
+    local labelPos = layoutToWorld(cx, front - PLATFORM_MARGIN - LABEL_DEPTH / 2, top + 0.05)
+    queue[#queue + 1] = function() spawnLabel(label, labelPos, memo) end
+    for _, p in ipairs(placed) do
+        local it = p.item
+        local pos = layoutToWorld(cx + p.x, front - p.z, top + SPAWN_HEIGHT)
+        queue[#queue + 1] = function() spawnModel(it.data, pos, memo, it.state, it.raw, it.size) end
+        if it.label then
+            local lpos = layoutToWorld(cx + p.x, front - p.z, top + 0.35)
+            queue[#queue + 1] = function() spawnLabel(it.label, lpos, memo, 18) end
+        end
+    end
 
-    cursorZ = blockStart + depth + BLOCK_GAP
     spawned[key] = true
     saveState()
 end
@@ -897,8 +996,7 @@ local function clearSpawned(key, done)
             end
         end
     end
-    if key then spawned[key] = nil else spawned = {} end
-    if next(spawned) == nil then cursorZ = 0 end   -- rows are not compacted, only reset when empty
+    if key then spawned[key], blocks[key] = nil, nil else spawned, blocks = {}, {} end
     saveState()
     flushQueue(function() done(count) end)
 end
@@ -915,7 +1013,7 @@ local function applyIndex(text)
     for _, f in ipairs(data.factions) do factionById[f.id] = f end
     buildImportIndex()
     if sel.f and not factionById[sel.f] then sel.f, sel.sub = nil, nil end
-    setStatus("Catalog version " .. tostring(data.version) .. " loaded. Click the spawner to open the menu.")
+    setStatus("Catalog version " .. tostring(data.version) .. " loaded. Pick a faction on the left, then click units to spawn them.")
     render()
     -- The model script is fetched with a timestamp: it can change without a catalog update.
     WebRequest.get(RAW_BASE .. "tts/model.lua?v=" .. os.time(), function(req)
@@ -975,218 +1073,7 @@ local function loadCatalog()
     end)
 end
 
--- ============ TOKEN MENU ============
-local groups     = {main = {}, faction = {}, settings = {}}   -- spawned menu tokens per group
-local factionTok = {}    -- faction id -> its token (for dimming)
-local unitChip   = {}    -- unit id -> its chip in the open faction (for the on/off colour)
-local pressing   = {}    -- tokens in their press animation
-
-local function destroyGroup(name)
-    for _, obj in ipairs(groups[name]) do
-        if obj ~= nil then obj.destruct() end   -- destroyed objects compare equal to nil
-    end
-    groups[name] = {}
-    if name == "main" then factionTok = {} end
-    if name == "faction" then unitChip = {} end
-end
-
-local function menuOpen() return #groups.main > 0 end
-
--- Adds the buttons once the token exists and its custom image has loaded (the size of a
--- custom token or tile comes from its image). spec: see spawnToken.
-local function finishToken(obj, spec)
-    if obj == nil then return end
-    local s = obj.getScale()
-    local b = obj.getBoundsNormalized().size
-    if spec.image or spec.icon then
-        local f = TOKEN_SIZE / math.max(b.x, b.z)
-        obj.setScale({s.x * f, s.y * f, s.z * f})
-    else
-        obj.setScale({s.x * spec.w / b.x, s.y * THICKNESS / b.y, s.z * spec.d / b.z})
-    end
-    -- Sit on the surface the spawner stands on.
-    local h = obj.getBoundsNormalized().size.y
-    local p = obj.getPosition()
-    obj.setPosition({p.x, tableY() + h / 2, p.z})
-    if spec.tint then obj.setColorTint(spec.tint) end
-
-    local top, inv, size, sc = buttonFrame(obj)
-    local rot = {0, BUTTON_YAW - ART_YAW, 0}
-    local plain = not (spec.image or spec.icon)
-    local lines = wrap(spec.label, plain and 18 or 14, plain and spec.count and 2 or 3)
-    if plain and spec.count then lines[#lines + 1] = tostring(spec.count) end
-    -- The whole token is the button; plain chips carry their label on it.
-    obj.createButton({click_function = "tok_click", function_owner = self,
-        label = plain and table.concat(lines, "\n") or "",
-        position = {0, top, 0}, rotation = rot, scale = inv,
-        width = size.x * BU, height = size.z * BU, font_size = FONT * BU,
-        color = CLEAR, hover_color = HOVER, press_color = PRESSED, font_color = TEXT})
-    if not plain then
-        -- Name on a dark strip just in front of the token (toward the player).
-        local toward = (ART_YAW == 180) and -1 or 1
-        local depth = 0.1 + #lines * LINE
-        obj.createButton({click_function = "tok_click", function_owner = self, label = table.concat(lines, "\n"),
-            position = {0, top, toward * (size.z / 2 + 0.05 + depth / 2) / sc.z}, rotation = rot, scale = inv,
-            width = (TOKEN_SIZE + 0.6) * BU, height = depth * BU, font_size = FONT * BU,
-            color = STRIP, hover_color = STRIP, press_color = STRIP, font_color = TEXT})
-    end
-end
-
--- Spawns one menu token at spawner-relative (x, z) (x to the player's right, z away from them).
--- spec = {x, z, w, d, action, label, count, image | icon | color, tint}: image = art tile,
--- icon = faction token (shape cut from the icon), otherwise a plain chip of w x d.
-local function spawnToken(group, spec)
-    local yaw = self.getRotation().y + ART_YAW
-    local data
-    if spec.icon then
-        data = {Name = "Custom_Token", CustomImage = {ImageURL = spec.icon, ImageSecondaryURL = "", ImageScalar = 1,
-                WidthScale = 0, CustomToken = {Thickness = THICKNESS, MergeDistancePixels = 15, StandUp = false, Stackable = false}}}
-    elseif spec.image then
-        data = {Name = "Custom_Tile", CustomImage = {ImageURL = spec.image, ImageSecondaryURL = "", ImageScalar = 1,
-                WidthScale = 0, CustomTile = {Type = 0, Thickness = THICKNESS, Stackable = false, Stretch = false}}}
-    else
-        local c = spec.color or CHIP_OFF
-        data = {Name = "BlockSquare", ColorDiffuse = {r = c[1], g = c[2], b = c[3]}}
-    end
-    local memo = token .. "|" .. spec.action
-    local pos = toWorld(spec.x, spec.z, tableY() + 0.5)
-    data.Nickname  = spec.label
-    data.Transform = {posX = pos.x, posY = pos.y, posZ = pos.z, rotX = 0, rotY = yaw, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1}
-    data.Locked, data.Tooltip, data.Grid, data.Snap = true, false, false, false
-    data.Tags, data.Memo = {UI_TAG}, memo
-    local obj = spawnObjectData({data = data, callback_function = function(o)
-        o.memo = memo
-        -- Custom images load after the object exists; their size is only right afterwards.
-        Wait.condition(function() pcall(finishToken, o, spec) end,
-            function() return o == nil or not o.loading_custom end, 10, function() pcall(finishToken, o, spec) end)
-    end})
-    table.insert(groups[group], obj)
-    return obj
-end
-
--- Press feedback: unlock, hop up a little, drop (TTS plays the landing click), lock again at
--- the old place. Errors in Wait callbacks would leave the token unlocked, so they're guarded.
-local function press(obj)
-    if obj == nil or pressing[obj] then return end
-    pressing[obj] = true
-    local home, rot, wasLocked = obj.getPosition(), obj.getRotation(), obj.getLock()
-    obj.setLock(false)
-    obj.setPosition({home.x, home.y + PRESS_LIFT, home.z})
-    local function settle()
-        pressing[obj] = nil
-        if obj == nil then return end
-        obj.setLock(wasLocked)
-        obj.setPosition(home)
-        obj.setRotation(rot)
-    end
-    Wait.frames(function()
-        Wait.condition(function() pcall(settle) end, function() return obj == nil or obj.resting end, 1.5,
-            function() pcall(settle) end)
-    end, 5)
-end
-
--- Unit chips (keyed "faction/unit") show whether their unit is on the table.
-local function refreshChips()
-    for key, chip in pairs(unitChip) do
-        if chip ~= nil then chip.setColorTint(spawned[key] and CHIP_ON or CHIP_OFF) end
-    end
-end
-
--- Faction tokens: the open one in full colour, the others dimmed (all bright when none is open).
-local function refreshFactions(openId)
-    for id, tok in pairs(factionTok) do
-        if tok ~= nil then tok.setColorTint((openId == nil or id == openId) and {1, 1, 1} or DIMMED) end
-    end
-end
-
-local function factionColumnX() return hubHalf() + 1.0 + TOKEN_SIZE / 2 end
-
--- Main group: faction tokens in a row to the right of the spawner, action tokens to its left.
-local function openMain()
-    local hh = hubHalf()
-    for i, f in ipairs(index.factions) do
-        factionTok[f.id] = spawnToken("main", {x = factionColumnX() + (i - 1) * (TOKEN_SIZE + 0.6), z = 0.4,
-            action = "faction:" .. f.id, label = f.name, icon = ICONS[f.id] or ICONS.default})
-    end
-    local ax1, ax2 = -(hh + 0.8 + TOKEN_SIZE / 2), -(hh + 1.4 + TOKEN_SIZE * 1.5)
-    local row2 = -(TOKEN_SIZE + 1.4)
-    spawnToken("main", {x = ax1, z = 0.4, action = "import", label = "Import warband", image = ART.import})
-    spawnToken("main", {x = ax2, z = 0.4, action = "ready", label = "Ready all", image = ART.ready})
-    spawnToken("main", {x = ax1, z = row2, action = "settings", label = "Settings", image = ART.settings})
-    spawnToken("main", {x = ax2, z = row2, action = "clear", label = "Clear all", image = ART.clear})
-end
-
--- Faction group: filter chips (All models, Vanilla, each subfaction), then the unit chips with
--- model counts under the filter (the faction's units, then the mercenaries it hires), then
--- "Spawn whole faction". Rebuilt whenever the filter changes (counts change).
-local function openFaction()
-    destroyGroup("faction")
-    local fe = factionById[sel.f]
-    if not fe then return end
-    local x0 = factionColumnX() - TOKEN_SIZE / 2 + CHIP_W / 2
-    local z = -(TOKEN_SIZE / 2 + 1.3 + SMALL_D / 2)   -- below the faction names
-    local function cell(i) return x0 + ((i - 1) % UNIT_COLUMNS) * (CHIP_W + GAP) end
-
-    local list = {{id = "", name = "All models"}, {id = "_", name = "Vanilla"}}
-    for _, sf in ipairs(fe.subfactions or {}) do list[#list + 1] = sf end
-    for i, sf in ipairs(list) do
-        local chosen = (sf.id == "" and sel.sub == nil) or sf.id == sel.sub
-        spawnToken("faction", {x = cell(i), z = z - math.floor((i - 1) / UNIT_COLUMNS) * (SMALL_D + GAP),
-            w = CHIP_W, d = SMALL_D, action = "sub:" .. sf.id, label = sf.name, color = chosen and CHIP_ON or CHIP_OFF})
-    end
-    z = z - math.ceil(#list / UNIT_COLUMNS) * (SMALL_D + GAP) - 0.3
-
-    z = z - (CHIP_D - SMALL_D) / 2
-    local i = 0
-    local function unitChipFor(f, u)
-        local n, fallback = unitCount(u)
-        if n == 0 then return end
-        i = i + 1
-        local key = unitKey(f, u.id)
-        unitChip[key] = spawnToken("faction", {x = cell(i), z = z - math.floor((i - 1) / UNIT_COLUMNS) * (CHIP_D + GAP),
-            w = CHIP_W, d = CHIP_D, action = "unit:" .. key, label = u.name .. (fallback and " (vanilla)" or ""),
-            count = n, color = spawned[key] and CHIP_ON or CHIP_OFF})
-    end
-    for _, u in ipairs(fe.units) do unitChipFor(fe.id, u) end
-    for _, u in ipairs(hiredUnits(fe)) do unitChipFor(MERC, u) end
-    i = i + 1
-    spawnToken("faction", {x = cell(i), z = z - math.floor((i - 1) / UNIT_COLUMNS) * (CHIP_D + GAP),
-        w = CHIP_W, d = CHIP_D, action = "all", label = (i == 1) and "No models for this filter" or "Spawn whole faction",
-        color = CHIP_ALL})
-    refreshFactions(sel.f)
-end
-
--- Settings: a column of chips below the action tokens.
-local function openSettings()
-    local x = -(hubHalf() + 1.1 + TOKEN_SIZE)
-    local z = -(2 * TOKEN_SIZE + 3.0)
-    local items = {
-        {"save", "Save positions"}, {"load", "Load positions"},
-        {"scripts", scriptsOn and "Model scripts: on" or "Model scripts: off"}, {"reload", "Reload catalog"},
-    }
-    for k, it in ipairs(items) do
-        spawnToken("settings", {x = x, z = z - (k - 1) * (SMALL_D + GAP), w = CHIP_W, d = SMALL_D,
-            action = it[1], label = it[2]})
-    end
-end
-
-local function closeMenu()
-    destroyGroup("faction")
-    destroyGroup("settings")
-    destroyGroup("main")
-end
-
-local function callOnModels(fn)
-    local n = 0
-    for _, obj in ipairs(getAllObjects()) do
-        if obj.hasTag(MODEL_TAG) then
-            obj.call(fn)
-            n = n + 1
-        end
-    end
-    return n
-end
-
+-- ============ CONSOLE ACTIONS ============
 local function notBusy()
     if busy then setStatus("Still busy, try again in a moment.") end
     return not busy
@@ -1194,23 +1081,23 @@ end
 
 local ACTIONS = {}
 
+-- A faction icon opens its unit list; clicking the open one closes it.
 function ACTIONS.faction(fid)
-    if sel.f == fid and #groups.faction > 0 then
-        destroyGroup("faction")
-        sel.sub = nil
-        refreshFactions(nil)
-        return
+    listMode = "units"
+    if sel.f == fid then
+        sel.f, sel.sub = nil, nil
+        setStatus("Pick a faction.")
+    else
+        sel.f, sel.sub = fid, nil
+        setStatus(factionById[fid].name .. ": click a unit to spawn it, click it again to remove it.")
     end
-    if sel.f ~= fid then sel.f, sel.sub = fid, nil end
     saveState()
-    openFaction()
-    setStatus(factionById[fid].name .. ": click a unit to spawn it, click it again to remove it.")
 end
 
 function ACTIONS.sub(id)
     sel.sub = (id ~= "" and id) or nil
     saveState()
-    openFaction()
+    render()
 end
 
 -- key = "faction/unit" (a hired mercenary is listed under the faction that hires it).
@@ -1224,7 +1111,6 @@ function ACTIONS.unit(key)
     if spawned[key] then
         clearSpawned(key, function(n)
             busy = false
-            refreshChips()
             setStatus("Removed " .. n .. " object(s).")
         end)
         return
@@ -1233,7 +1119,6 @@ function ACTIONS.unit(key)
         if u.id == uid then
             spawnUnits({{f = fe.id, unit = u}}, function(n)
                 busy = false
-                refreshChips()
                 setStatus("Spawned " .. n .. " model(s) of " .. u.name .. ".")
             end)
             return
@@ -1254,7 +1139,6 @@ ACTIONS["all"] = function()
     busy = true
     spawnUnits(units, function(n)
         busy = false
-        refreshChips()
         setStatus("Spawned " .. n .. " model(s) from " .. fe.name .. ".")
     end)
 end
@@ -1264,71 +1148,56 @@ function ACTIONS.clear()
     busy = true
     clearSpawned(nil, function(n)
         busy = false
-        refreshChips()
         setStatus("Removed " .. n .. " object(s).")
     end)
 end
 
+-- Import and Settings swap the list column; clicking them again goes back to the units.
 function ACTIONS.import()
+    if listMode == "import" then listMode = "units" render() return end
     if not notBusy() then return end
-    importing, importText = true, ""
+    listMode, importText = "import", ""
     local fe = factionById[sel.f]
-    setStatus(fe and #groups.faction > 0
-        and ("Models are picked for " .. fe.name .. (sel.sub and (" (" .. subName(fe, sel.sub) .. ")") or "")
-            .. ". Open another faction first to change that.")
-        or "Tip: open your faction (and subfaction) first, so the import picks fitting models.")
+    setStatus(fe and ("Models are picked for " .. fe.name .. (sel.sub and (" (" .. subName(fe, sel.sub) .. ")") or "")
+            .. ". Pick another faction first to change that.")
+        or "Tip: pick your faction (and subfaction) first, so the import picks fitting models.")
 end
 
 function ACTIONS.settings()
-    if #groups.settings > 0 then destroyGroup("settings") else openSettings() end
+    listMode = (listMode == "settings") and "units" or "settings"
+    render()
 end
 
-function ACTIONS.ready() setStatus("Readied " .. callOnModels("readyActivation") .. " model(s).") end
-function ACTIONS.save() setStatus("Saved positions of " .. callOnModels("savePosition") .. " model(s).") end
-function ACTIONS.load() setStatus("Moved " .. callOnModels("loadPosition") .. " model(s) back.") end
-function ACTIONS.reload() closeMenu() loadCatalog() end
+function ACTIONS.reload() listMode = "units" loadCatalog() end
 
-function ACTIONS.scripts(_, obj)
+function ACTIONS.scripts()
     scriptsOn = not scriptsOn
     saveState()
-    destroyGroup("settings")
-    openSettings()
     setStatus(scriptsOn and "New models get the model script (activation, dice, range rings)."
         or "New models spawn without scripts.")
 end
 
--- Click on a menu token: its memo says what it does ("<token>|<action>:<arg>").
-function tok_click(obj, player_color)
-    lastColor = player_color
-    local memo = obj.memo or ""
-    local bar = string.find(memo, "|", 1, true)
-    local cmd = bar and string.sub(memo, bar + 1) or ""
-    local colon = string.find(cmd, ":", 1, true)
-    local action, arg = cmd, nil
-    if colon then action, arg = string.sub(cmd, 1, colon - 1), string.sub(cmd, colon + 1) end
-    press(obj)
+-- XML clicks: the element's id is "<action>" or "<action>:<arg>".
+function ui_click(player, value, id)
+    local colon = string.find(id or "", ":", 1, true)
+    local action, arg = id, nil
+    if colon then action, arg = string.sub(id, 1, colon - 1), string.sub(id, colon + 1) end
     local fn = ACTIONS[action]
     if fn then
-        local ok, err = pcall(fn, arg, obj)
+        local ok, err = pcall(fn, arg)
         if not ok then setStatus("Error: " .. tostring(err)) end
     end
 end
 
--- Click on the spawner: open or close the menu.
-function tok_hub(obj, player_color)
-    lastColor = player_color
-    press(self)
+-- Click on the hub: collapse the console to the status, or open it again.
+function tok_hub()
     if not index then
         setStatus("The catalog isn't loaded yet. Loading it again...")
         loadCatalog()
         return
     end
-    if menuOpen() then
-        closeMenu()
-    else
-        openMain()
-        if sel.f and factionById[sel.f] and next(spawned) ~= nil then openFaction() end
-    end
+    collapsed = not collapsed
+    render()
 end
 
 -- ============ WARBAND IMPORT CALLBACKS (XML) ============
@@ -1370,7 +1239,7 @@ local function decodeWarband(text)
 end
 
 function ui_importCancel()
-    importing, importText = false, ""
+    listMode, importText = "units", ""
     setStatus("Import cancelled.")
 end
 
@@ -1380,11 +1249,11 @@ local function importGo(mode)
     if busy then return end
     local warband = decodeWarband(importText)
     if not warband or #warband.models == 0 then
-        setStatus("That isn't a warband code. Make one on the page above from your Trench Companion TTS export, "
-            .. "copy it with the Copy button and paste it here.")
+        setStatus("That isn't a warband code. Make one on the page in the import box from your Trench Companion "
+            .. "TTS export, copy it with the Copy button and paste it there.")
         return
     end
-    importing, importText, busy = false, "", true
+    listMode, importText, busy = "units", "", true
     importWarband(warband, mode, function(n, order, missing)
         busy = false
         local text = (mode == "slots" and ("Spawned " .. n .. " slot(s) for ") or ("Imported " .. n .. " model(s) of "))
@@ -1404,7 +1273,7 @@ function ui_importSlots() importGo("slots") end
 
 -- ============ SAVE / LOAD ============
 function onSave()
-    return JSON.encode({token = token, cursorZ = cursorZ, layoutEdge = layoutEdge, f = sel.f, sub = sel.sub,
+    return JSON.encode({token = token, blocks = blocks, f = sel.f, sub = sel.sub,
                         scriptsOn = scriptsOn})
 end
 
@@ -1425,7 +1294,8 @@ function onLoad(saved_data)
         if saved_data and saved_data ~= "" then
             local data = JSON.decode(saved_data)
             if type(data) == "table" then
-                token, cursorZ, layoutEdge = data.token, data.cursorZ or 0, data.layoutEdge
+                token = data.token
+                if type(data.blocks) == "table" then blocks = data.blocks end
                 sel.f, sel.sub = data.f, data.sub
                 if data.scriptsOn == false then scriptsOn = false end
             end
@@ -1437,6 +1307,7 @@ function onLoad(saved_data)
         saveState()
     end
     self.setVectorLines({})   -- older versions drew a spawn-area outline
+    loadAssets()
     render()
 
     -- Other objects may still be loading during onLoad; look at them a frame later.
@@ -1448,16 +1319,15 @@ function onLoad(saved_data)
                 local memo = obj.memo or ""
                 if string.find(memo, prefix, 1, true) == 1 then spawned[string.sub(memo, #prefix + 1)] = true end
             end
-            if next(spawned) == nil then cursorZ = 0 end
-            -- Menu tokens saved with the game belong to a menu that no longer exists.
+            -- Places of units that are gone (deleted by hand) are free again.
+            for key in pairs(blocks) do
+                if not spawned[key] then blocks[key] = nil end
+            end
+            -- Menu tokens of v8 (spawned objects) saved with the game.
             for _, obj in ipairs(getAllObjects()) do
                 if obj.hasTag(UI_TAG) and string.find(obj.memo or "", prefix, 1, true) == 1 then obj.destruct() end
             end
         end)
         step("loading the catalog", loadCatalog)
     end, 1)
-end
-
-function onDestroy()
-    closeMenu()
 end

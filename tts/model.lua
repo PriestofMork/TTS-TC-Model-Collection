@@ -6,10 +6,10 @@
 --  * Range rings: hover the model and type a number (two digits within 0.8 s). Typing the
 --    same number again, or 0, clears it.
 --  * Stabilisation: rotation is frozen while the model stands, so it doesn't tip over.
---  * Save / Load position: right-click menu; the spawner has Save all / Load all.
+--  * Save / Load position: right-click menu.
 --  * Activation: once the model is taken off the spawner's platform, its faction token floats
---    above it (object UI). Click it to toggle ready / activated (greyed). The spawner's
---    "Ready all" resets every model.
+--    above it (object UI). Click it to toggle ready / activated (greyed). "Ready all" in the
+--    right-click menu readies every model and saves each one's position (start of a round).
 --  * Dice: drop any die onto the model. The real die stays, locked, floating beside the
 --    activation token, and moves with the model. Hover it and press 1-6 to turn it to that
 --    face; press 0 to take it off (it lands beside the model as a normal die).
@@ -184,12 +184,28 @@ function ui_toggleActivation()
     saveState()
 end
 
--- Called by the spawner's "Ready all".
+-- Called by "Ready all" (on any model).
 function readyActivation()
     if not state.activated then return end
     state.activated = false
     renderPanel()
     saveState()
+end
+
+-- "Ready all" in every model's right-click menu: start of a round. Readies every model on the
+-- table and saves each one's position (Load position puts it back there).
+local function readyAll(player_color)
+    local n = 0
+    for _, obj in ipairs(getAllObjects()) do
+        if obj.hasTag(MODEL_TAG) then
+            obj.call("readyActivation")
+            obj.call("savePosition")
+            n = n + 1
+        end
+    end
+    if player_color then
+        printToColor("Readied " .. n .. " model(s) and saved their positions.", player_color)
+    end
 end
 
 function ui_removeToken(player, value, id)
@@ -506,6 +522,7 @@ function onLoad(saved_data)
     self.addTag(MODEL_TAG)
     self.max_typed_number = 1   -- every key press reaches onNumberTyped; two digits are buffered there
 
+    self.addContextMenuItem("Ready all", readyAll)
     self.addContextMenuItem("Save position", savePosition)
     self.addContextMenuItem("Load position", loadPosition)
     self.addContextMenuItem("Clear tokens", function()
