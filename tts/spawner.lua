@@ -2,14 +2,16 @@
 -- TC MINIATURES - SPAWNER
 -- =============================================
 -- Contains no models. On load it fetches catalog/version.json and catalog/index.json from
--- GitHub and builds a menu. Clicking a unit fetches that unit's file and spawns its models
--- in labelled rows behind the spawner; clicking it again removes them.
+-- GitHub. The spawner itself is the hub of a token menu: clicking it lays out faction and
+-- action tokens beside it, a faction token lays out that faction's subfactions and units, and
+-- clicking a unit fetches that unit's file and spawns its models in labelled rows behind the
+-- spawner (clicking it again removes them).
 --
 -- Spawned objects carry the tag TCM_Spawned and a memo "<token>|<faction>/<unit>". The token
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 7
+local SPAWNER_VERSION = 8
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -20,9 +22,10 @@ local MODEL_TAG      = "TCM_Model"        -- models running tts/model.lua
 local PLATFORM_NAME  = "TC spawn platform"
 
 -- Layout, in world units relative to the spawner (follows its position and rotation, not its
--- scale). Rows start behind the panel as seen by a player reading it (local -z: tested in TTS,
--- a panel with rotation "0 0 180" reads upright from the object's +z side).
-local LAYOUT_GAP    = 1.5    -- between the panel's back edge and the first label
+-- scale). The player reading the spawner sits on its local +z side (tested in TTS: an XML panel
+-- with rotation "0 0 180" reads upright from there). Units spawn behind the spawner (local -z),
+-- the token menu lies beside and in front of it.
+local LAYOUT_GAP    = 1.5    -- between the spawner's back edge and the first label
 local MAX_ROW_WIDTH = 30     -- rows wrap after this width
 local MODEL_PAD     = 0.4    -- space between models in a row
 local ROW_GAP       = 0.6    -- space between rows
@@ -37,11 +40,6 @@ local PLATFORM_MARGIN    = 0.5    -- platform border around the label and rows
 local PLATFORM_COLOR     = {0.12, 0.12, 0.12}
 local SPAWN_HEIGHT       = 0.3    -- models are spawned this far above the platform and settle
 
--- Spawn-area indicator (vector lines on the spawner) at platform height. Only a hint of where
--- and in which direction units appear: the real row width, and a short depth.
-local INDICATOR_DEPTH = 10
-local INDICATOR_COLOR = {0.3, 0.8, 1}
-
 -- Catalog models have rotY 0 (export resets it). They get the spawner's yaw plus this.
 -- Change to 180 if models come out facing away from the players.
 local MODEL_YAW = 0
@@ -52,8 +50,56 @@ local LABEL_FONT  = 48
 
 local BATCH_SIZE = 15        -- objects spawned or destroyed per frame
 
-local UI_MARGIN = 5          -- extra lift above the object's top face, in UI units
+local UI_MARGIN = 5          -- import box: extra lift above the object's top face, in UI units
 local UI_SCALE  = 1
+
+-- Token menu. Tokens are ordinary locked objects with buttons whose function_owner is this
+-- script, so they carry no script themselves. Their memo is "<token>|<action>:<arg>".
+local UI_TAG       = "TCM_UI"
+local BU           = 500     -- button units per world inch (TO TUNE in TTS)
+local FONT         = 0.22    -- label text height, world inches
+local LINE         = 0.3     -- label line height, world inches
+local TOKEN_SIZE   = 1.8     -- image and faction tokens: longest side
+local CHIP_W       = 3.0     -- plain chips (units, subfactions, settings)
+local CHIP_D       = 1.2     -- unit chips (name on up to two lines + count)
+local SMALL_D      = 0.8     -- one-line chips
+local GAP          = 0.3     -- between chips
+local UNIT_COLUMNS = 5
+local THICKNESS    = 0.2
+-- Turn tokens / button text by 180 if they read upside down for the player at the spawner.
+local ART_YAW      = 0       -- TO TUNE: image orientation of spawned tokens
+local BUTTON_YAW   = 180     -- TO TUNE: button text orientation on an object with yaw 0
+-- Press: the token hops this high and drops back; the landing makes TTS's normal collision
+-- click (scripts can't play sound effects). Then it is locked again at its old place.
+local PRESS_LIFT   = 0.3
+
+local CLEAR    = {0, 0, 0, 0}
+local HOVER    = {1, 1, 1, 0.12}
+local PRESSED  = {1, 1, 1, 0.25}
+local STRIP    = {0.05, 0.04, 0.04, 0.85}   -- dark band behind labels on the table
+local TEXT     = {0.93, 0.89, 0.81}
+local CHIP_OFF = {0.16, 0.15, 0.14}
+local CHIP_ON  = {0.5, 0.13, 0.1}           -- unit on the table / subfaction chosen
+local CHIP_ALL = {0.42, 0.33, 0.12}         -- "Spawn whole faction"
+local DIMMED   = {0.45, 0.45, 0.45}         -- faction tokens that aren't open
+
+-- Art for the action tokens (Trench Crusade art by Mike Franchina, hotlinked from ArtStation).
+local ART = {
+    import   = "https://cdnb.artstation.com/p/assets/images/images/031/677/223/large/mike-franchina-procession-pilgrimage-web.jpg?1604303199",
+    ready    = "https://cdnb.artstation.com/p/assets/images/images/022/892/925/large/mike-franchina-sword-saint-female.jpg?1577126961",
+    settings = "https://cdnb.artstation.com/p/assets/images/images/031/363/803/large/mike-franchina-flak-battery2.jpg?1603392122",
+    clear    = "https://cdnb.artstation.com/p/assets/images/images/024/247/491/large/mike-franchina-cardinal-of-malady.jpg?1581794458",
+}
+-- Faction icons: the same images as the activation token in tts/model.lua.
+local ICONS = {
+    ["default"]                           = "https://steamusercontent-a.akamaihd.net/ugc/17565077082788158933/75472FA5DF4D9A5A79DFCACCF02E6D044B0AB70F/",
+    ["new-antioch"]                       = "https://steamusercontent-a.akamaihd.net/ugc/12140870569665962018/647EDFF35D1397EC9577768D1913B378FD7F36CB/",
+    ["trench-pilgrims"]                   = "https://steamusercontent-a.akamaihd.net/ugc/10865693481180792483/AE8CC3A0A475582AAA8BB10EC12569BAC5AF6C1A/",
+    ["iron-sultanate"]                    = "https://steamusercontent-a.akamaihd.net/ugc/11011531862432102694/E93E2E25F8A724A188A450B906DFAA25E146F085/",
+    ["heretic-legion"]                    = "https://steamusercontent-a.akamaihd.net/ugc/11780656566766941905/005DCBF2BD729C494E5EC0DA58CF0398ABA447A8/",
+    ["cult-of-the-black-grail"]           = "https://steamusercontent-a.akamaihd.net/ugc/15933842057862161695/5D24970A3042BDF9747BFC7DC74039B64C17BD99/",
+    ["court-of-the-seven-headed-serpent"] = "https://steamusercontent-a.akamaihd.net/ugc/12527179569780597784/62EFCEC8605897141AC23B9F8E49A464589B2001/",
+}
 -- ==================================================
 
 local index        = nil     -- decoded catalog/index.json
@@ -66,13 +112,12 @@ local busy         = false
 local status       = "Loading catalog..."
 local renderPending = false
 local unitCache    = {}      -- unit file -> decoded entries (for the loaded catalog version)
-local panelHeight  = 720     -- UI units; set by buildXml, used by the layout
 local layoutEdge   = nil     -- distance from the spawner's centre to the first row (world units)
-local showArea     = true    -- spawn-area indicator visible
 local scriptsOn    = true    -- put tts/model.lua into spawned models
 local modelScript  = nil     -- tts/model.lua, fetched on load
 local importing    = false   -- the panel shows the warband import box
 local importText   = ""      -- what was pasted; kept here, the box itself isn't re-rendered
+local lastColor    = nil     -- player who clicked last (long messages also go to their chat)
 
 -- ============ UTIL ============
 local function xmlEscape(s)
@@ -90,52 +135,35 @@ local function tableY()
     return b.center.y - b.size.y / 2
 end
 
--- Layout position -> world position. x runs left to right and z away from the reader
--- (both in world units from the back edge of the panel). The panel is usually much bigger
--- than the object, so its size decides where the layout starts. positionToWorld uses local
--- (scaled) units: UI units are 100 per local unit, and dividing by scale gives world units.
-local function getLayoutEdge()
-    -- Fixed once units are on the table, so switching to a faction with a taller menu
-    -- doesn't shift where new rows go relative to existing ones.
-    if layoutEdge then return layoutEdge end
-    local panelHalf = panelHeight / 2 / 100 * UI_SCALE * self.getScale().z
-    return math.max(self.getBoundsNormalized().size.z / 2, panelHalf) + LAYOUT_GAP
+-- Half the spawner's footprint (world units).
+local function hubHalf()
+    local b = self.getBoundsNormalized().size
+    return math.max(b.x, b.z) / 2
 end
 
--- Layout (x, z) -> local (scaled) coordinates of the spawner, at world height offset dy
--- above the spawner's base. Used for vector lines, which are drawn in local space.
-local function layoutToLocal(x, z, dy)
-    local s, p = self.getScale(), self.getPosition()
-    return {-x / s.x, (tableY() + dy - p.y) / s.y, -(getLayoutEdge() + z) / s.z}
+-- Layout position -> world position. x runs to the player's right and z away from them,
+-- both in world units.
+local function layoutEdgeNow()
+    -- Fixed once units are on the table, so new rows line up with existing ones.
+    return layoutEdge or (hubHalf() + LAYOUT_GAP)
 end
 
--- Layout (x, z) -> world position at world height y.
-local function layoutToWorld(x, z, y)
+-- Spawner-relative (x, z) -> world position at world height y. positionToWorld takes local
+-- (scaled) units, so world units are divided by the scale.
+local function toWorld(x, z, y)
     local s = self.getScale()
-    local pos = self.positionToWorld(Vector(-x / s.x, 0, -(getLayoutEdge() + z) / s.z))
+    local pos = self.positionToWorld(Vector(-x / s.x, 0, -z / s.z))
     pos.y = y
     return pos
 end
 
-local function platformTop()
-    return tableY() + PLATFORM_HEIGHT
+-- Layout (x, z): z counts from where the unit rows start, behind the spawner.
+local function layoutToWorld(x, z, y)
+    return toWorld(x, layoutEdgeNow() + z, y)
 end
 
--- Draws where units will spawn: an outline at platform height with an arrow pointing away
--- from the panel. Vector lines belong to the spawner, so they follow it when it moves.
-local function drawIndicator()
-    if not showArea then
-        self.setVectorLines({})
-        return
-    end
-    local h, half = PLATFORM_HEIGHT, MAX_ROW_WIDTH / 2
-    local function at(x, z) return layoutToLocal(x, z, h) end
-    local function line(points) return {points = points, color = INDICATOR_COLOR, thickness = 0.1} end
-    self.setVectorLines({
-        line({at(-half, 0), at(half, 0), at(half, INDICATOR_DEPTH), at(-half, INDICATOR_DEPTH), at(-half, 0)}),
-        line({at(0, 1), at(0, 5)}),
-        line({at(-1, 4), at(0, 5), at(1, 4)}),
-    })
+local function platformTop()
+    return tableY() + PLATFORM_HEIGHT
 end
 
 local function unitKey(f, u) return f .. "/" .. u end
@@ -156,132 +184,178 @@ local function spawnedObjects()
     return list
 end
 
--- Models of a unit visible under the current subfaction filter.
-local function unitCount(unit)
-    if not sel.sub then return unit.count end
-    return (unit.any or 0) + ((unit.subs or {})[sel.sub] or 0)
-end
+local MERC = "mercenaries"
 
-local function entryMatches(entry)
-    if not sel.sub or not entry.s or #entry.s == 0 then return true end
-    for _, s in ipairs(entry.s) do
-        if s == sel.sub then return true end
+local function contains(list, x)
+    for _, v in ipairs(type(list) == "table" and list or {}) do
+        if v == x then return true end
     end
     return false
+end
+
+-- An entry's s lists the subfactions its model was made for; empty (or "_", where export
+-- merged a vanilla copy with themed ones) = the faction's vanilla look.
+local function isVanilla(entry)
+    local s = type(entry.s) == "table" and entry.s or {}
+    return #s == 0 or contains(s, "_")
+end
+
+-- Subfaction filter (sel.sub): nil = all models, "_" = vanilla models, a subfaction id =
+-- models made for it, or the vanilla ones where a unit has none of its own (subfactions often
+-- just use vanilla models). Returns the count and whether it fell back to vanilla.
+local function unitCount(unit)
+    if not sel.sub then return unit.count, false end
+    if sel.sub == "_" then return unit.any or 0, false end
+    local n = (unit.subs or {})[sel.sub] or 0
+    if n > 0 then return n, false end
+    return unit.any or 0, true
+end
+
+local function filterEntries(entries)
+    if not sel.sub then return entries end
+    local themed, vanilla = {}, {}
+    for _, e in ipairs(entries) do
+        if sel.sub ~= "_" and contains(e.s, sel.sub) then themed[#themed + 1] = e end
+        if isVanilla(e) then vanilla[#vanilla + 1] = e end
+    end
+    return (#themed > 0) and themed or vanilla
+end
+
+-- The mercenary units a faction can hire (index.json copies the lists from config/units.json).
+-- A subfaction with its own list overrides the faction's (Trench Ghosts hire none). Then the
+-- Mercenaries units every warband can get (`everyone`: Golem, an exploration reward), which
+-- no subfaction list removes.
+local function hiredUnits(fe)
+    local mercs, out = factionById[MERC], {}
+    if not mercs or fe.id == MERC then return out end
+    local hires = fe.mercenaries
+    for _, sf in ipairs(fe.subfactions or {}) do
+        if sf.id == sel.sub and sf.mercenaries then hires = sf.mercenaries end
+    end
+    local seen = {}
+    for _, uid in ipairs(hires or {}) do
+        for _, u in ipairs(mercs.units) do
+            if u.id == uid then
+                out[#out + 1] = u
+                seen[uid] = true
+            end
+        end
+    end
+    for _, u in ipairs(mercs.units) do
+        if u.everyone and not seen[u.id] then out[#out + 1] = u end
+    end
+    return out
+end
+
+local function subName(fe, id)
+    if id == "_" then return "Vanilla" end
+    for _, sf in ipairs(fe.subfactions or {}) do
+        if sf.id == id then return sf.name end
+    end
+    return tostring(id)
 end
 
 -- ============ STATUS / UI ============
 local render
 
--- Status is part of the XML, so changing it re-renders the panel. Calling self.UI.setValue
--- instead throws a null-reference error while the panel doesn't exist yet (e.g. in onLoad).
+-- Wraps text at spaces into lines of at most `width` characters, at most maxLines lines.
+-- (Patterns are fine here: status texts are short.)
+local function wrap(text, width, maxLines)
+    local lines, line = {}, ""
+    for word in string.gmatch(tostring(text), "%S+") do
+        if line ~= "" and #line + 1 + #word > width then
+            lines[#lines + 1] = line
+            line = word
+        else
+            line = (line == "" and word) or (line .. " " .. word)
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line end
+    if maxLines and #lines > maxLines then
+        local short = {}
+        for i = 1, maxLines do short[i] = lines[i] end
+        short[maxLines] = short[maxLines] .. " ..."
+        return short, true
+    end
+    return lines, false
+end
+
+local STATUS_WIDTH, STATUS_LINES = 44, 4
+
+-- The status is drawn as buttons, so changing it re-renders (buttons and the import box).
+-- Text too long for the strip in front of the spawner also goes to the clicking player's chat.
 local function setStatus(text)
     status = text
+    local _, cutOff = wrap(text, STATUS_WIDTH, STATUS_LINES)
+    if cutOff and lastColor then pcall(function() printToColor("[TC Miniatures] " .. text, lastColor) end) end
     render()
 end
 
--- The panel's height is the sum of its rows, so it grows with the unit list instead of
--- needing a scroll view (TTS didn't draw the scroll view's contents).
-local function buildXml()
+-- Button sizes on an object scale with it; dividing by the scale makes them world-sized.
+-- Returns the local height just above the object's top face and the inverse scale.
+local function buttonFrame(obj)
+    local s, b = obj.getScale(), obj.getBoundsNormalized().size
+    return (b.y / 2 + 0.02) / s.y, {1 / s.x, 1 / s.y, 1 / s.z}, b, s
+end
+
+-- The spawner itself is the hub token: an invisible button over it opens the menu, and a dark
+-- strip in front of it (toward the player) shows the status.
+local function drawHub()
+    self.clearButtons()
+    local top, inv, b, s = buttonFrame(self)
+    self.createButton({click_function = "tok_hub", function_owner = self, label = "",
+        position = {0, top, 0}, rotation = {0, BUTTON_YAW, 0}, scale = inv,
+        width = b.x * BU, height = b.z * BU, color = CLEAR, hover_color = HOVER, press_color = PRESSED})
+    local lines = wrap(status, STATUS_WIDTH, STATUS_LINES)
+    local depth = 0.2 + #lines * LINE
+    self.createButton({click_function = "tok_none", function_owner = self, label = table.concat(lines, "\n"),
+        position = {0, top, (b.z / 2 + 0.3 + depth / 2) / s.z}, rotation = {0, BUTTON_YAW, 0}, scale = inv,
+        width = 7 * BU, height = depth * BU, font_size = FONT * BU,
+        color = STRIP, hover_color = STRIP, press_color = STRIP, font_color = TEXT})
+end
+
+function tok_none() end
+
+-- The only XML left: the warband import box, shown on the spawner while importing.
+-- Trench Companion's export is too big for a TTS text box (Unity cuts UI text at ~16,000
+-- characters), so players turn it into a short code on the converter page first. TTS can't
+-- open a browser from a script, so the address is shown in a read-only box to copy. The code
+-- box is single-line (only draws the visible part) and read once in onEndEdit; the text lives
+-- in importText because re-rendering the panel empties the box.
+local function buildImportXml()
     local x, height = {}, 24   -- 24 = top + bottom padding
-    local function add(s) x[#x + 1] = s end
-    local function row(h, s)
+    local function row(h, el)
         height = height + h + 6   -- 6 = layout spacing
-        add(s)
+        x[#x + 1] = el
     end
-
-    row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Miniatures</Text>')
-
-    local fe = index and factionById[sel.f]
-    if fe and importing then
-        -- The only import path: Trench Companion's export is too big for a TTS text box (Unity
-        -- cuts UI text at ~16,000 characters), so players turn it into a short code on the
-        -- converter page first. TTS can't open a browser from a script, so the address is shown
-        -- in a read-only box to copy. The code box is single-line (only draws the visible part)
-        -- and read once in onEndEdit; the text lives in importText because re-rendering the
-        -- panel empties the box.
-        row(22, '<Text preferredHeight="22" fontSize="15" alignment="MiddleLeft">1. Open this page in your browser:</Text>')
-        row(36, '<InputField preferredHeight="36" fontSize="15" readOnly="true" lineType="SingleLine">'
-            .. CODE_PAGE .. '</InputField>')
-        row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">2. Paste your Trench Companion TTS export there '
-            .. 'and copy the code. 3. Paste the code here:</Text>')
-        row(40, '<InputField id="importBox" preferredHeight="40" fontSize="16" lineType="SingleLine" '
-            .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
-        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
-            .. '<Button onClick="ui_importModels" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn models</Button>'
-            .. '<Button onClick="ui_importSlots" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn slots</Button>'
-            .. '<Button onClick="ui_importCancel">Cancel</Button></HorizontalLayout>')
-    elseif fe then
-        local opts = {}
-        for _, f in ipairs(index.factions) do
-            opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
-        end
-        row(40, '<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">' .. table.concat(opts) .. '</Dropdown>')
-
-        local subs = fe.subfactions or {}
-        if #subs > 0 then
-            opts = {'<Option' .. (sel.sub == nil and ' selected="true"' or '') .. '>All subfactions</Option>'}
-            for _, sf in ipairs(subs) do
-                opts[#opts + 1] = '<Option' .. (sf.id == sel.sub and ' selected="true"' or '') .. '>' .. xmlEscape(sf.name) .. '</Option>'
-            end
-            row(40, '<Dropdown id="sub" preferredHeight="40" onValueChanged="ui_sub">' .. table.concat(opts) .. '</Dropdown>')
-        end
-
-        row(22, '<Text preferredHeight="22" fontSize="15" color="#AAAAAA" alignment="MiddleLeft">Click a unit to spawn it, click again to remove it.</Text>')
-
-        -- Unit buttons, two per row.
-        local buttons = {}
-        for _, u in ipairs(fe.units) do
-            local n = unitCount(u)
-            if n > 0 then
-                local on = spawned[unitKey(fe.id, u.id)]
-                buttons[#buttons + 1] = '<Button id="u:' .. xmlEscape(u.id) .. '" onClick="ui_unit" fontSize="15"'
-                    .. (on and ' colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF"' or '')
-                    .. '>' .. xmlEscape(u.name) .. ' (' .. n .. ')</Button>'
-            end
-        end
-        if #buttons == 0 then
-            row(30, '<Text preferredHeight="30" color="#AAAAAA">No models for this filter.</Text>')
-        end
-        for i = 1, #buttons, 2 do
-            row(40, '<HorizontalLayout preferredHeight="40" spacing="6">' .. buttons[i]
-                .. (buttons[i + 1] or '<Text></Text>') .. '</HorizontalLayout>')
-        end
-
-        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
-            .. '<Button onClick="ui_spawnFaction">Spawn whole faction</Button>'
-            .. '<Button onClick="ui_clearAll">Clear all</Button>'
-            .. '<Button onClick="ui_toggleArea">' .. (showArea and 'Hide area' or 'Show area') .. '</Button>'
-            .. '</HorizontalLayout>')
-        row(40, '<HorizontalLayout preferredHeight="40" spacing="6">'
-            .. '<Button onClick="ui_readyAll" fontSize="15">Ready all</Button>'
-            .. '<Button onClick="ui_saveAll" fontSize="15">Save positions</Button>'
-            .. '<Button onClick="ui_loadAll" fontSize="15">Load positions</Button>'
-            .. '<Button onClick="ui_toggleScripts" fontSize="15">' .. (scriptsOn and 'Model scripts: on' or 'Model scripts: off')
-            .. '</Button></HorizontalLayout>')
-        row(40, '<Button onClick="ui_importOpen" preferredHeight="40">Import warband (Trench Companion)</Button>')
-    else
-        row(40, '<Button onClick="ui_reload" preferredHeight="40">Reload catalog</Button>')
-    end
-
+    row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">Import warband</Text>')
+    row(22, '<Text preferredHeight="22" fontSize="15" alignment="MiddleLeft">1. Open this page in your browser:</Text>')
+    row(36, '<InputField preferredHeight="36" fontSize="15" readOnly="true" lineType="SingleLine">'
+        .. CODE_PAGE .. '</InputField>')
+    row(44, '<Text preferredHeight="44" fontSize="15" alignment="MiddleLeft">2. Paste your Trench Companion TTS export there '
+        .. 'and copy the code. 3. Paste the code here:</Text>')
+    row(40, '<InputField id="importBox" preferredHeight="40" fontSize="16" lineType="SingleLine" '
+        .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
+    row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
+        .. '<Button onClick="ui_importModels" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn models</Button>'
+        .. '<Button onClick="ui_importSlots" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Spawn slots</Button>'
+        .. '<Button onClick="ui_importCancel">Cancel</Button></HorizontalLayout>')
     row(60, '<Text preferredHeight="60" fontSize="15" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
-
-    panelHeight = height
-    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="17"/><Dropdown fontSize="18"/></Defaults>'
+    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="17"/></Defaults>'
         .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="460" height="' .. height
         .. '" scale="' .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">'
         .. '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
         .. table.concat(x) .. '</VerticalLayout></Panel>'
 end
 
--- Coalesce several render() calls in one frame into a single setXml.
+-- Coalesce several render() calls in one frame.
 function render()
     if renderPending then return end
     renderPending = true
     Wait.frames(function()
         renderPending = false
-        self.UI.setXml(buildXml())
-        drawIndicator()   -- after buildXml: the layout starts at the panel's edge
+        drawHub()
+        self.UI.setXml(importing and buildImportXml() or "")
     end, 1)
 end
 
@@ -412,8 +486,8 @@ end
 -- because bounds aren't known before the models load.
 local function queueBlock(key, label, items)
     local memo = token .. "|" .. key
-    if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the panel again
-    layoutEdge = getLayoutEdge()
+    if cursorZ == 0 then layoutEdge = nil end   -- empty table: measure the spawner again
+    layoutEdge = layoutEdgeNow()
 
     local top = platformTop()
     local blockStart = cursorZ
@@ -467,10 +541,11 @@ local function queueBlock(key, label, items)
     saveState()
 end
 
+-- Hired mercenaries spawned from a faction's menu get that faction's activation icon.
 local function queueUnit(f, unit, entries)
     local items = {}
     for _, e in ipairs(entries) do
-        items[#items + 1] = {data = e.data, w = e.w, d = e.d, state = {f = f, u = unit.id}}
+        items[#items + 1] = {data = e.data, w = e.w, d = e.d, state = {f = sel.f or f, u = unit.id}}
     end
     queueBlock(unitKey(f, unit.id), unit.name .. " (" .. #entries .. ")", items)
 end
@@ -496,25 +571,23 @@ local function fetchUnit(unit, callback)
     end)
 end
 
--- Spawns the given units one after another, then calls done.
-local function spawnUnits(f, units, done)
+-- Spawns the given units ({f =, unit =}) one after another, then calls done.
+local function spawnUnits(units, done)
     local i, total = 0, 0
     local function nextUnit()
         i = i + 1
-        local unit = units[i]
-        if not unit then
+        local job = units[i]
+        if not job then
             flushQueue(function() done(total) end)
             return
         end
+        local unit = job.unit
         setStatus("Loading " .. unit.name .. "...")
         fetchUnit(unit, function(entries)
             if entries then
-                local list = {}
-                for _, e in ipairs(entries) do
-                    if entryMatches(e) then list[#list + 1] = e end
-                end
+                local list = filterEntries(entries)
                 if #list > 0 then
-                    queueUnit(f, unit, list)
+                    queueUnit(job.f, unit, list)
                     total = total + #list
                     render()
                 end
@@ -673,12 +746,42 @@ local function slotData(name, desc, f, u, shortName)
     }
 end
 
+-- Which catalog models a warband member may get: the first non-empty of
+--   1. models picked for imports of the chosen subfaction (i contains it),
+--   2. models made for that subfaction (s contains it),
+--   3. models picked for vanilla imports (i contains a vanilla key),
+--   4. vanilla models,  5. any model of the unit.
+-- theme = the chosen subfaction or nil. vanillaKeys: {"_"} for a faction's own units; for
+-- hired mercenaries the warband's faction id first (its maintainer pick), then "_".
+local function importPicks(all, theme, vanillaKeys)
+    local function where(test)
+        local out = {}
+        for _, e in ipairs(all) do
+            if test(e) then out[#out + 1] = e end
+        end
+        return out
+    end
+    local steps = {}
+    if theme then
+        steps[#steps + 1] = function(e) return contains(e.i, theme) end
+        steps[#steps + 1] = function(e) return contains(e.s, theme) end
+    end
+    for _, k in ipairs(vanillaKeys) do
+        steps[#steps + 1] = function(e) return contains(e.i, k) end
+    end
+    steps[#steps + 1] = isVanilla
+    for _, test in ipairs(steps) do
+        local list = where(test)
+        if #list > 0 then return list end
+    end
+    return all
+end
+
 -- Spawns a whole warband on one platform labelled with its name. Each warband member gets a
 -- catalog model of its unit; copies of the same unit get different models where the catalog
--- has several. The subfaction filter applies to the selected faction's units. Mercenaries get
--- the warband's faction for their activation icon.
--- mode "models": catalog models, picked from the import set of the chosen subfaction (or
--- "_" = vanilla) where the maintainer defined one. mode "slots": one slot per member instead.
+-- has several. The subfaction open in the menu applies to the selected faction's units and
+-- its mercenaries. Mercenaries get the warband's faction for their activation icon.
+-- mode "models": catalog models (see importPicks). mode "slots": one slot per member instead.
 local function importWarband(warband, mode, done)
     local members, missing, order = {}, {}, {}
     local factionVotes = {}
@@ -718,16 +821,11 @@ local function importWarband(warband, mode, done)
                 items[#items + 1] = {data = slotData(name, desc, warbandFaction, uid, tostring(mb.m.name)),
                                      w = 1.4, d = 1.4, raw = true, size = {1.3, 1.3}, label = tostring(mb.m.name)}
             else
-                -- The subfaction filter only means something for the selected faction's units.
-                local set = (mb.hit.f == sel.f and sel.sub) or "_"
-                local all, inSet, fits = entriesByKey[key] or {}, {}, {}
-                for _, e in ipairs(all) do
-                    for _, i in ipairs(e.i or {}) do
-                        if i == set then inSet[#inSet + 1] = e break end
-                    end
-                    if mb.hit.f ~= sel.f or entryMatches(e) then fits[#fits + 1] = e end
-                end
-                local list = (#inSet > 0 and inSet) or (#fits > 0 and fits) or all
+                -- The subfaction only means something for the selected faction's units and
+                -- the mercenaries it hires.
+                local merc = mb.hit.f == MERC and warbandFaction ~= MERC
+                local theme = (sel.sub ~= "_" and (mb.hit.f == sel.f or merc)) and sel.sub or nil
+                local list = importPicks(entriesByKey[key] or {}, theme, merc and {warbandFaction or "_", "_"} or {"_"})
                 if #list > 0 then
                     used[key] = (used[key] or 0) + 1
                     local e = list[(used[key] - 1) % #list + 1]
@@ -816,8 +914,8 @@ local function applyIndex(text)
     index, factionById, unitCache = data, {}, {}
     for _, f in ipairs(data.factions) do factionById[f.id] = f end
     buildImportIndex()
-    if not factionById[sel.f] then sel.f, sel.sub = data.factions[1].id, nil end
-    setStatus("Catalog version " .. tostring(data.version) .. " loaded.")
+    if sel.f and not factionById[sel.f] then sel.f, sel.sub = nil, nil end
+    setStatus("Catalog version " .. tostring(data.version) .. " loaded. Click the spawner to open the menu.")
     render()
     -- The model script is fetched with a timestamp: it can change without a catalog update.
     WebRequest.get(RAW_BASE .. "tts/model.lua?v=" .. os.time(), function(req)
@@ -877,47 +975,266 @@ local function loadCatalog()
     end)
 end
 
--- ============ UI CALLBACKS ============
--- XML UI passes (player, value, id). Dropdown value is the selected option's text.
-function ui_faction(player, value)
-    for _, f in ipairs(index.factions) do
-        if f.name == value and f.id ~= sel.f then
-            sel.f, sel.sub = f.id, nil
-            render()
-            break
+-- ============ TOKEN MENU ============
+local groups     = {main = {}, faction = {}, settings = {}}   -- spawned menu tokens per group
+local factionTok = {}    -- faction id -> its token (for dimming)
+local unitChip   = {}    -- unit id -> its chip in the open faction (for the on/off colour)
+local pressing   = {}    -- tokens in their press animation
+
+local function destroyGroup(name)
+    for _, obj in ipairs(groups[name]) do
+        if obj ~= nil then obj.destruct() end   -- destroyed objects compare equal to nil
+    end
+    groups[name] = {}
+    if name == "main" then factionTok = {} end
+    if name == "faction" then unitChip = {} end
+end
+
+local function menuOpen() return #groups.main > 0 end
+
+-- Adds the buttons once the token exists and its custom image has loaded (the size of a
+-- custom token or tile comes from its image). spec: see spawnToken.
+local function finishToken(obj, spec)
+    if obj == nil then return end
+    local s = obj.getScale()
+    local b = obj.getBoundsNormalized().size
+    if spec.image or spec.icon then
+        local f = TOKEN_SIZE / math.max(b.x, b.z)
+        obj.setScale({s.x * f, s.y * f, s.z * f})
+    else
+        obj.setScale({s.x * spec.w / b.x, s.y * THICKNESS / b.y, s.z * spec.d / b.z})
+    end
+    -- Sit on the surface the spawner stands on.
+    local h = obj.getBoundsNormalized().size.y
+    local p = obj.getPosition()
+    obj.setPosition({p.x, tableY() + h / 2, p.z})
+    if spec.tint then obj.setColorTint(spec.tint) end
+
+    local top, inv, size, sc = buttonFrame(obj)
+    local rot = {0, BUTTON_YAW - ART_YAW, 0}
+    local plain = not (spec.image or spec.icon)
+    local lines = wrap(spec.label, plain and 18 or 14, plain and spec.count and 2 or 3)
+    if plain and spec.count then lines[#lines + 1] = tostring(spec.count) end
+    -- The whole token is the button; plain chips carry their label on it.
+    obj.createButton({click_function = "tok_click", function_owner = self,
+        label = plain and table.concat(lines, "\n") or "",
+        position = {0, top, 0}, rotation = rot, scale = inv,
+        width = size.x * BU, height = size.z * BU, font_size = FONT * BU,
+        color = CLEAR, hover_color = HOVER, press_color = PRESSED, font_color = TEXT})
+    if not plain then
+        -- Name on a dark strip just in front of the token (toward the player).
+        local toward = (ART_YAW == 180) and -1 or 1
+        local depth = 0.1 + #lines * LINE
+        obj.createButton({click_function = "tok_click", function_owner = self, label = table.concat(lines, "\n"),
+            position = {0, top, toward * (size.z / 2 + 0.05 + depth / 2) / sc.z}, rotation = rot, scale = inv,
+            width = (TOKEN_SIZE + 0.6) * BU, height = depth * BU, font_size = FONT * BU,
+            color = STRIP, hover_color = STRIP, press_color = STRIP, font_color = TEXT})
+    end
+end
+
+-- Spawns one menu token at spawner-relative (x, z) (x to the player's right, z away from them).
+-- spec = {x, z, w, d, action, label, count, image | icon | color, tint}: image = art tile,
+-- icon = faction token (shape cut from the icon), otherwise a plain chip of w x d.
+local function spawnToken(group, spec)
+    local yaw = self.getRotation().y + ART_YAW
+    local data
+    if spec.icon then
+        data = {Name = "Custom_Token", CustomImage = {ImageURL = spec.icon, ImageSecondaryURL = "", ImageScalar = 1,
+                WidthScale = 0, CustomToken = {Thickness = THICKNESS, MergeDistancePixels = 15, StandUp = false, Stackable = false}}}
+    elseif spec.image then
+        data = {Name = "Custom_Tile", CustomImage = {ImageURL = spec.image, ImageSecondaryURL = "", ImageScalar = 1,
+                WidthScale = 0, CustomTile = {Type = 0, Thickness = THICKNESS, Stackable = false, Stretch = false}}}
+    else
+        local c = spec.color or CHIP_OFF
+        data = {Name = "BlockSquare", ColorDiffuse = {r = c[1], g = c[2], b = c[3]}}
+    end
+    local memo = token .. "|" .. spec.action
+    local pos = toWorld(spec.x, spec.z, tableY() + 0.5)
+    data.Nickname  = spec.label
+    data.Transform = {posX = pos.x, posY = pos.y, posZ = pos.z, rotX = 0, rotY = yaw, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1}
+    data.Locked, data.Tooltip, data.Grid, data.Snap = true, false, false, false
+    data.Tags, data.Memo = {UI_TAG}, memo
+    local obj = spawnObjectData({data = data, callback_function = function(o)
+        o.memo = memo
+        -- Custom images load after the object exists; their size is only right afterwards.
+        Wait.condition(function() pcall(finishToken, o, spec) end,
+            function() return o == nil or not o.loading_custom end, 10, function() pcall(finishToken, o, spec) end)
+    end})
+    table.insert(groups[group], obj)
+    return obj
+end
+
+-- Press feedback: unlock, hop up a little, drop (TTS plays the landing click), lock again at
+-- the old place. Errors in Wait callbacks would leave the token unlocked, so they're guarded.
+local function press(obj)
+    if obj == nil or pressing[obj] then return end
+    pressing[obj] = true
+    local home, rot, wasLocked = obj.getPosition(), obj.getRotation(), obj.getLock()
+    obj.setLock(false)
+    obj.setPosition({home.x, home.y + PRESS_LIFT, home.z})
+    local function settle()
+        pressing[obj] = nil
+        if obj == nil then return end
+        obj.setLock(wasLocked)
+        obj.setPosition(home)
+        obj.setRotation(rot)
+    end
+    Wait.frames(function()
+        Wait.condition(function() pcall(settle) end, function() return obj == nil or obj.resting end, 1.5,
+            function() pcall(settle) end)
+    end, 5)
+end
+
+-- Unit chips (keyed "faction/unit") show whether their unit is on the table.
+local function refreshChips()
+    for key, chip in pairs(unitChip) do
+        if chip ~= nil then chip.setColorTint(spawned[key] and CHIP_ON or CHIP_OFF) end
+    end
+end
+
+-- Faction tokens: the open one in full colour, the others dimmed (all bright when none is open).
+local function refreshFactions(openId)
+    for id, tok in pairs(factionTok) do
+        if tok ~= nil then tok.setColorTint((openId == nil or id == openId) and {1, 1, 1} or DIMMED) end
+    end
+end
+
+local function factionColumnX() return hubHalf() + 1.0 + TOKEN_SIZE / 2 end
+
+-- Main group: faction tokens in a row to the right of the spawner, action tokens to its left.
+local function openMain()
+    local hh = hubHalf()
+    for i, f in ipairs(index.factions) do
+        factionTok[f.id] = spawnToken("main", {x = factionColumnX() + (i - 1) * (TOKEN_SIZE + 0.6), z = 0.4,
+            action = "faction:" .. f.id, label = f.name, icon = ICONS[f.id] or ICONS.default})
+    end
+    local ax1, ax2 = -(hh + 0.8 + TOKEN_SIZE / 2), -(hh + 1.4 + TOKEN_SIZE * 1.5)
+    local row2 = -(TOKEN_SIZE + 1.4)
+    spawnToken("main", {x = ax1, z = 0.4, action = "import", label = "Import warband", image = ART.import})
+    spawnToken("main", {x = ax2, z = 0.4, action = "ready", label = "Ready all", image = ART.ready})
+    spawnToken("main", {x = ax1, z = row2, action = "settings", label = "Settings", image = ART.settings})
+    spawnToken("main", {x = ax2, z = row2, action = "clear", label = "Clear all", image = ART.clear})
+end
+
+-- Faction group: filter chips (All models, Vanilla, each subfaction), then the unit chips with
+-- model counts under the filter (the faction's units, then the mercenaries it hires), then
+-- "Spawn whole faction". Rebuilt whenever the filter changes (counts change).
+local function openFaction()
+    destroyGroup("faction")
+    local fe = factionById[sel.f]
+    if not fe then return end
+    local x0 = factionColumnX() - TOKEN_SIZE / 2 + CHIP_W / 2
+    local z = -(TOKEN_SIZE / 2 + 1.3 + SMALL_D / 2)   -- below the faction names
+    local function cell(i) return x0 + ((i - 1) % UNIT_COLUMNS) * (CHIP_W + GAP) end
+
+    local list = {{id = "", name = "All models"}, {id = "_", name = "Vanilla"}}
+    for _, sf in ipairs(fe.subfactions or {}) do list[#list + 1] = sf end
+    for i, sf in ipairs(list) do
+        local chosen = (sf.id == "" and sel.sub == nil) or sf.id == sel.sub
+        spawnToken("faction", {x = cell(i), z = z - math.floor((i - 1) / UNIT_COLUMNS) * (SMALL_D + GAP),
+            w = CHIP_W, d = SMALL_D, action = "sub:" .. sf.id, label = sf.name, color = chosen and CHIP_ON or CHIP_OFF})
+    end
+    z = z - math.ceil(#list / UNIT_COLUMNS) * (SMALL_D + GAP) - 0.3
+
+    z = z - (CHIP_D - SMALL_D) / 2
+    local i = 0
+    local function unitChipFor(f, u)
+        local n, fallback = unitCount(u)
+        if n == 0 then return end
+        i = i + 1
+        local key = unitKey(f, u.id)
+        unitChip[key] = spawnToken("faction", {x = cell(i), z = z - math.floor((i - 1) / UNIT_COLUMNS) * (CHIP_D + GAP),
+            w = CHIP_W, d = CHIP_D, action = "unit:" .. key, label = u.name .. (fallback and " (vanilla)" or ""),
+            count = n, color = spawned[key] and CHIP_ON or CHIP_OFF})
+    end
+    for _, u in ipairs(fe.units) do unitChipFor(fe.id, u) end
+    for _, u in ipairs(hiredUnits(fe)) do unitChipFor(MERC, u) end
+    i = i + 1
+    spawnToken("faction", {x = cell(i), z = z - math.floor((i - 1) / UNIT_COLUMNS) * (CHIP_D + GAP),
+        w = CHIP_W, d = CHIP_D, action = "all", label = (i == 1) and "No models for this filter" or "Spawn whole faction",
+        color = CHIP_ALL})
+    refreshFactions(sel.f)
+end
+
+-- Settings: a column of chips below the action tokens.
+local function openSettings()
+    local x = -(hubHalf() + 1.1 + TOKEN_SIZE)
+    local z = -(2 * TOKEN_SIZE + 3.0)
+    local items = {
+        {"save", "Save positions"}, {"load", "Load positions"},
+        {"scripts", scriptsOn and "Model scripts: on" or "Model scripts: off"}, {"reload", "Reload catalog"},
+    }
+    for k, it in ipairs(items) do
+        spawnToken("settings", {x = x, z = z - (k - 1) * (SMALL_D + GAP), w = CHIP_W, d = SMALL_D,
+            action = it[1], label = it[2]})
+    end
+end
+
+local function closeMenu()
+    destroyGroup("faction")
+    destroyGroup("settings")
+    destroyGroup("main")
+end
+
+local function callOnModels(fn)
+    local n = 0
+    for _, obj in ipairs(getAllObjects()) do
+        if obj.hasTag(MODEL_TAG) then
+            obj.call(fn)
+            n = n + 1
         end
     end
+    return n
 end
 
-function ui_sub(player, value)
-    sel.sub = nil
-    for _, s in ipairs(factionById[sel.f].subfactions or {}) do
-        if s.name == value then sel.sub = s.id end
+local function notBusy()
+    if busy then setStatus("Still busy, try again in a moment.") end
+    return not busy
+end
+
+local ACTIONS = {}
+
+function ACTIONS.faction(fid)
+    if sel.f == fid and #groups.faction > 0 then
+        destroyGroup("faction")
+        sel.sub = nil
+        refreshFactions(nil)
+        return
     end
-    render()
+    if sel.f ~= fid then sel.f, sel.sub = fid, nil end
+    saveState()
+    openFaction()
+    setStatus(factionById[fid].name .. ": click a unit to spawn it, click it again to remove it.")
 end
 
-function ui_unit(player, value, id)
-    if busy then setStatus("Still busy, try again in a moment.") return end
-    if not index then return end
-    local uid = string.sub(id, 3)   -- strip "u:"
-    local fe = factionById[sel.f]
-    local key = unitKey(fe.id, uid)
+function ACTIONS.sub(id)
+    sel.sub = (id ~= "" and id) or nil
+    saveState()
+    openFaction()
+end
+
+-- key = "faction/unit" (a hired mercenary is listed under the faction that hires it).
+function ACTIONS.unit(key)
+    if not notBusy() or not index then return end
+    local slash = string.find(key or "", "/", 1, true)
+    if not slash then return end
+    local fe, uid = factionById[string.sub(key, 1, slash - 1)], string.sub(key, slash + 1)
+    if not fe then return end
     busy = true
     if spawned[key] then
         clearSpawned(key, function(n)
             busy = false
+            refreshChips()
             setStatus("Removed " .. n .. " object(s).")
-            render()
         end)
         return
     end
     for _, u in ipairs(fe.units) do
         if u.id == uid then
-            spawnUnits(fe.id, {u}, function(n)
+            spawnUnits({{f = fe.id, unit = u}}, function(n)
                 busy = false
+                refreshChips()
                 setStatus("Spawned " .. n .. " model(s) of " .. u.name .. ".")
-                render()
             end)
             return
         end
@@ -925,41 +1242,96 @@ function ui_unit(player, value, id)
     busy = false
 end
 
-function ui_spawnFaction()
-    if busy then setStatus("Still busy, try again in a moment.") return end
-    if not index then return end
+ACTIONS["all"] = function()
+    if not notBusy() or not index then return end
     local fe = factionById[sel.f]
+    if not fe then return end
     local units = {}
     for _, u in ipairs(fe.units) do
-        if unitCount(u) > 0 and not spawned[unitKey(fe.id, u.id)] then units[#units + 1] = u end
+        if unitCount(u) > 0 and not spawned[unitKey(fe.id, u.id)] then units[#units + 1] = {f = fe.id, unit = u} end
     end
     if #units == 0 then setStatus("Everything in this faction is already spawned.") return end
     busy = true
-    spawnUnits(fe.id, units, function(n)
+    spawnUnits(units, function(n)
         busy = false
+        refreshChips()
         setStatus("Spawned " .. n .. " model(s) from " .. fe.name .. ".")
-        render()
     end)
 end
 
-function ui_clearAll()
-    if busy then setStatus("Still busy, try again in a moment.") return end
+function ACTIONS.clear()
+    if not notBusy() then return end
     busy = true
     clearSpawned(nil, function(n)
         busy = false
+        refreshChips()
         setStatus("Removed " .. n .. " object(s).")
-        render()
     end)
 end
 
-function ui_reload() loadCatalog() end
-
-function ui_importOpen()
-    if busy then setStatus("Still busy, try again in a moment.") return end
+function ACTIONS.import()
+    if not notBusy() then return end
     importing, importText = true, ""
-    setStatus("Faction and subfaction above decide which models are used.")
+    local fe = factionById[sel.f]
+    setStatus(fe and #groups.faction > 0
+        and ("Models are picked for " .. fe.name .. (sel.sub and (" (" .. subName(fe, sel.sub) .. ")") or "")
+            .. ". Open another faction first to change that.")
+        or "Tip: open your faction (and subfaction) first, so the import picks fitting models.")
 end
 
+function ACTIONS.settings()
+    if #groups.settings > 0 then destroyGroup("settings") else openSettings() end
+end
+
+function ACTIONS.ready() setStatus("Readied " .. callOnModels("readyActivation") .. " model(s).") end
+function ACTIONS.save() setStatus("Saved positions of " .. callOnModels("savePosition") .. " model(s).") end
+function ACTIONS.load() setStatus("Moved " .. callOnModels("loadPosition") .. " model(s) back.") end
+function ACTIONS.reload() closeMenu() loadCatalog() end
+
+function ACTIONS.scripts(_, obj)
+    scriptsOn = not scriptsOn
+    saveState()
+    destroyGroup("settings")
+    openSettings()
+    setStatus(scriptsOn and "New models get the model script (activation, dice, range rings)."
+        or "New models spawn without scripts.")
+end
+
+-- Click on a menu token: its memo says what it does ("<token>|<action>:<arg>").
+function tok_click(obj, player_color)
+    lastColor = player_color
+    local memo = obj.memo or ""
+    local bar = string.find(memo, "|", 1, true)
+    local cmd = bar and string.sub(memo, bar + 1) or ""
+    local colon = string.find(cmd, ":", 1, true)
+    local action, arg = cmd, nil
+    if colon then action, arg = string.sub(cmd, 1, colon - 1), string.sub(cmd, colon + 1) end
+    press(obj)
+    local fn = ACTIONS[action]
+    if fn then
+        local ok, err = pcall(fn, arg, obj)
+        if not ok then setStatus("Error: " .. tostring(err)) end
+    end
+end
+
+-- Click on the spawner: open or close the menu.
+function tok_hub(obj, player_color)
+    lastColor = player_color
+    press(self)
+    if not index then
+        setStatus("The catalog isn't loaded yet. Loading it again...")
+        loadCatalog()
+        return
+    end
+    if menuOpen() then
+        closeMenu()
+    else
+        openMain()
+        if sel.f and factionById[sel.f] and next(spawned) ~= nil then openFaction() end
+    end
+end
+
+-- ============ WARBAND IMPORT CALLBACKS (XML) ============
 -- Unpacks a code from the converter page ("TCM1" + JSON, see docs/index.html) into the shape
 -- of Trench Companion's TTS export that importWarband reads. Returns nil if it isn't a code.
 local function decodeWarband(text)
@@ -1030,37 +1402,10 @@ end
 function ui_importModels() importGo("models") end
 function ui_importSlots() importGo("slots") end
 
-function ui_toggleScripts()
-    scriptsOn = not scriptsOn
-    saveState()
-    render()
-end
-
-local function callOnModels(fn)
-    local n = 0
-    for _, obj in ipairs(getAllObjects()) do
-        if obj.hasTag(MODEL_TAG) then
-            obj.call(fn)
-            n = n + 1
-        end
-    end
-    return n
-end
-
-function ui_readyAll() setStatus("Readied " .. callOnModels("readyActivation") .. " model(s).") end
-function ui_saveAll() setStatus("Saved positions of " .. callOnModels("savePosition") .. " model(s).") end
-function ui_loadAll() setStatus("Moved " .. callOnModels("loadPosition") .. " model(s) back.") end
-
-function ui_toggleArea()
-    showArea = not showArea
-    saveState()
-    render()
-end
-
 -- ============ SAVE / LOAD ============
 function onSave()
     return JSON.encode({token = token, cursorZ = cursorZ, layoutEdge = layoutEdge, f = sel.f, sub = sel.sub,
-                        showArea = showArea, scriptsOn = scriptsOn})
+                        scriptsOn = scriptsOn})
 end
 
 -- Each step runs protected and reports its name, so a failure in TTS says where it happened
@@ -1082,7 +1427,6 @@ function onLoad(saved_data)
             if type(data) == "table" then
                 token, cursorZ, layoutEdge = data.token, data.cursorZ or 0, data.layoutEdge
                 sel.f, sel.sub = data.f, data.sub
-                if data.showArea == false then showArea = false end
                 if data.scriptsOn == false then scriptsOn = false end
             end
         end
@@ -1092,6 +1436,7 @@ function onLoad(saved_data)
         token = "tcm" .. os.time() .. math.random(100000, 999999)
         saveState()
     end
+    self.setVectorLines({})   -- older versions drew a spawn-area outline
     render()
 
     -- Other objects may still be loading during onLoad; look at them a frame later.
@@ -1104,7 +1449,15 @@ function onLoad(saved_data)
                 if string.find(memo, prefix, 1, true) == 1 then spawned[string.sub(memo, #prefix + 1)] = true end
             end
             if next(spawned) == nil then cursorZ = 0 end
+            -- Menu tokens saved with the game belong to a menu that no longer exists.
+            for _, obj in ipairs(getAllObjects()) do
+                if obj.hasTag(UI_TAG) and string.find(obj.memo or "", prefix, 1, true) == 1 then obj.destruct() end
+            end
         end)
         step("loading the catalog", loadCatalog)
     end, 1)
+end
+
+function onDestroy()
+    closeMenu()
 end

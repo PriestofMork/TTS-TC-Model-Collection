@@ -3,6 +3,7 @@
     {
       "id": "new-antioch",
       "name": "New Antioch",
+      "mercenaries": ["communicant-anti-tank-hunter", "mendelist-ammo-monk", "mamluk-faris", "observer", "combat-biologist", "witchburner", "dogs", "scripture-guardian"],
       "subfactions": [
         {"id": "papal-states-intervention-force", "name": "Papal States Intervention Force"},
         {"id": "eire-rangers", "name": "Eire Rangers"},
@@ -27,6 +28,7 @@
     {
       "id": "trench-pilgrims",
       "name": "Trench Pilgrims",
+      "mercenaries": ["communicant-anti-tank-hunter", "sister-of-saint-cosmas", "mendelist-ammo-monk", "observer", "witchburner", "dogs", "scripture-guardian"],
       "subfactions": [
         {"id": "procession-of-the-sacred-affliction", "name": "Procession of the Sacred Affliction"},
         {"id": "cavalcade-of-the-tenth-plague", "name": "Cavalcade of the Tenth Plague"},
@@ -46,6 +48,7 @@
     {
       "id": "iron-sultanate",
       "name": "Iron Sultanate",
+      "mercenaries": ["mamluk-faris", "combat-biologist", "dogs", "scripture-guardian"],
       "subfactions": [
         {"id": "fidai-of-alamut-the-cabal-of-assassins", "name": "Fidai of Alamut - The Cabal of Assassins"},
         {"id": "house-of-wisdom", "name": "House of Wisdom"},
@@ -68,8 +71,9 @@
     {
       "id": "heretic-legion",
       "name": "Heretic Legion",
+      "mercenaries": ["sin-eater", "goetic-warlock", "hellhound", "scripture-guardian"],
       "subfactions": [
-        {"id": "trench-ghosts", "name": "Trench Ghosts"},
+        {"id": "trench-ghosts", "name": "Trench Ghosts", "mercenaries": []},
         {"id": "knights-of-avarice", "name": "Knights of Avarice"},
         {"id": "heretic-naval-raiders", "name": "Heretic Naval Raiders"}
       ],
@@ -88,6 +92,7 @@
     {
       "id": "cult-of-the-black-grail",
       "name": "Cult of the Black Grail",
+      "mercenaries": ["sin-eater", "hellhound", "scripture-guardian"],
       "subfactions": [
         {"id": "dirge-of-the-great-hegemon", "name": "Dirge of the Great Hegemon"},
         {"id": "the-great-hunger", "name": "The Great Hunger"}
@@ -109,6 +114,7 @@
     {
       "id": "court-of-the-seven-headed-serpent",
       "name": "Court of the Seven-Headed Serpent",
+      "mercenaries": ["sin-eater", "goetic-warlock", "hellhound", "scripture-guardian"],
       "subfactions": [
         {"id": "wrath", "name": "Wrath"},
         {"id": "envy", "name": "Envy"},
@@ -145,8 +151,9 @@
         {"id": "sin-eater", "name": "Sin Eater"},
         {"id": "sister-of-saint-cosmas", "name": "Sister of Saint Cosmas", "companion": ["md_combatmedic_mv_pilgrim"]},
         {"id": "witchburner", "name": "Witchburner"},
-        {"id": "golem", "name": "Golem", "companion": ["md_takwincreation_golem"]},
+        {"id": "golem", "name": "Golem", "companion": ["md_takwincreation_golem"], "everyone": true},
         {"id": "dogs", "name": "Dogs", "companion": ["trenchdog"]},
+        {"id": "hellhound", "name": "Hellhound", "companion": ["md_trenchdog_hellhound"]},
         {"id": "misc", "name": "Misc"}
       ]
     }

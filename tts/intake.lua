@@ -1,14 +1,27 @@
 -- =============================================
 -- TC MINIATURES - INTAKE STATION (dev save only)
 -- =============================================
--- Put this on a flat object (e.g. a scaled Custom Tile or Block). Drop models into the
--- outlined zone in front of it, pick faction / unit / subfactions, press Submit.
--- Each model gets a {"tc":1,...} tag in its GM Notes, foreign scripts/UI are stripped,
--- and it goes into a per-unit storage bag next to the station. tools/export.py then
--- reads the save (including bag contents) and writes catalog/.
+-- Sorting board for the maintainer. Choose a faction and press Open board: the station lays
+-- out a grid to its left, one column per unit (plus the mercenaries the faction can hire) and
+-- two rows per context (Vanilla, then each subfaction; each with General and Import), and takes
+-- every catalogued model of that faction out of its storage bag into its cell. Add new models
+-- by dropping them into a cell, retag by moving them, destroy them via the Discard strip.
+-- Close board tags every model by the cell it lies in, strips foreign scripts and puts it back
+-- into its unit bag. tools/export.py then reads the save (including bag contents).
 --
--- Storage uses one bag per unit instead of a grid on the table: ~2800 models laid out
--- at once would make the dev save very heavy, and bags keep each unit easy to re-check.
+-- One object = one cell. A model that belongs in several cells is copied, one copy per cell
+-- (export merges copies of the same model within a unit). Tags written by the board:
+--   General, Vanilla        {"s":[]}                    no subfaction theme
+--   General, subfaction C   {"s":[C]}                   made for C
+--   Import, context X       {"s":[],"i":[X],"k":"i"}    preferred pick for X's warband imports;
+--                                                       k = "i": s carries no theme
+-- X is "_" (vanilla) or a subfaction id. A faction's mercenaries use the faction id instead of
+-- "_" (Heretic Legion's vanilla pick of Goetic Warlocks: i = ["heretic-legion"]); "_" on a
+-- mercenary is the Mercenaries board's own vanilla pick. Older tags with several entries are
+-- split into copies when their board opens.
+--
+-- Storage stays one bag per unit: ~2800 models laid out at once would make the dev save very
+-- heavy, and a board only takes out one faction.
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -18,19 +31,47 @@ local UNITS_URL = RAW_BASE .. "config/units.json"
 -- before the repo is pushed. nil = fetch from GitHub on load / Reload.
 local LOCAL_UNITS_JSON = nil
 
--- All offsets/sizes are world units relative to the station; they follow its position and
--- rotation but NOT its scale. Local -z is the side a player reading the panel stands on.
-local ZONE_SIZE   = {x = 12, y = 6, z = 10}
-local ZONE_OFFSET = {x = 0, z = -9}
-local BAG_OFFSET  = {x = 12, z = 0}   -- first storage bag
-local BAG_SPACING = 2.5
+local MERC = "mercenaries"
+
+-- Board layout, in world units relative to the station (its position and rotation when the
+-- board was opened, not its scale). x runs to the right of a player standing on the station's
+-- local -z side (where the panel reads upright), z away from them. The board lies left of
+-- the station; rows start level with its front edge and grow away from the player.
+local BOARD_GAP   = 3      -- between the station and the board's right edge
+local ROW_LABEL_W = 8      -- column of row labels on the board's left
+local HEADER_D    = 2.5    -- row of column labels nearest to the player
+local CELL_GAP    = 0.5    -- between cells
+local CELL_PAD    = 0.3    -- around and between models in a cell
+local MIN_COL_W   = 6
+local MAX_COL_W   = 24
+local MIN_ROW_D   = 3
+local SPARE_D     = 2      -- empty room at the far side of every row, for new models
+local DISCARD_D   = 5      -- Discard strip beyond the last row
+local TILE_THICKNESS = 0.1
+local DEFAULT_SIZE   = 1.5 -- footprint of a model whose tag has no w/d
+
+-- TO TUNE in TTS: yaw of models on the board (relative to the station) so they face the
+-- player, and of the flat 3D text labels so they read upright from the player's side.
+local MODEL_YAW   = 180
+local LABEL_PITCH = 90
+local LABEL_YAW   = 0
+local LABEL_FONT  = 32
+
+local COLOR_GENERAL = {0.18, 0.18, 0.18}
+local COLOR_IMPORT  = {0.12, 0.22, 0.15}
+local COLOR_DISCARD = {0.4, 0.08, 0.08}
+local COLOR_HEADER  = {0.08, 0.08, 0.08}
+
+local BAG_OFFSET   = {x = 12, z = 0}   -- first storage bag (right of the station)
+local BAG_SPACING  = 2.5
 local BAGS_PER_ROW = 10
 
 -- TTS object names that count as models. Custom_Model has a CustomMesh; some source mods
 -- use asset bundles or image figurines instead.
 local MODEL_NAMES = {Custom_Model = true, Custom_Assetbundle = true, Figurine_Custom = true}
+local BOARD_TAG   = "TCM_Board"         -- tiles and labels of the open board
 
-local BATCH_SIZE = 10   -- models moved into a bag per frame
+local BATCH_SIZE = 10   -- objects taken out, stored or spawned per frame
 
 -- Object XML UI is positioned from the object's centre; its z is height (negative = up) in
 -- UI units (100 per local unit). The panel is lifted to the top face automatically, plus
@@ -38,21 +79,25 @@ local BATCH_SIZE = 10   -- models moved into a bag per frame
 local UI_MARGIN = 5
 local UI_SCALE  = 1
 
-local COLOR_NEW   = {0.2, 1, 0.2}
-local COLOR_RETAG = {1, 0.8, 0.1}
-local COLOR_BAD   = {1, 0.2, 0.2}
+local COLOR_OK   = {0.2, 1, 0.2}
+local COLOR_WARN = {1, 0.8, 0.1}
+local COLOR_BAD  = {1, 0.2, 0.2}
 -- ==================================================
 
 local config       = nil        -- decoded units.json
 local factionIndex = {}         -- faction id -> {faction=, index=, units={id->unit}, unitIndex={id->n}, subs={id->sub}}
--- s: set of subfaction ids the model fits (none = any). imp: set of import sets the model
--- belongs to ("_" = vanilla, else a subfaction id): a warband import only picks from these.
-local sel          = {f = nil, u = nil, s = {}, imp = {}}
+local subOwner     = {}         -- subfaction id -> faction id
+local sel          = {f = nil}  -- faction chosen in the dropdown
+-- The open board (saved): f, frame = {x, y, z, yaw}, cols = {f, u, name, x0, x1}, rows =
+-- {kind = "g"|"i", ctx = "_"|subfaction id, name, z0, z1}, discard = {z0, z1}, bounds.
+local board        = nil
 local status       = "Loading config..."
 local busy         = false
 local renderPending = false
 local highlighted  = {}
 local bagGuids     = {}         -- "f/u" -> guid; cache only, bags are identified by their GM Notes marker
+local keyByGuid    = {}         -- model identity (see modelKey) of objects on the board
+local pendingDrops = {}
 local dropToken    = 0
 
 -- ============ UTIL ============
@@ -65,12 +110,22 @@ local function xmlEscape(s)
     return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
 end
 
-local function sortedKeys(set)
-    local list = {}
-    for k in pairs(set) do list[#list + 1] = k end
-    table.sort(list)
-    return list
+-- Wraps a short text at spaces into lines of at most `width` characters.
+local function wrapWords(text, width)
+    local lines, line = {}, ""
+    for word in string.gmatch(tostring(text), "%S+") do
+        if line ~= "" and #line + 1 + #word > width then
+            lines[#lines + 1] = line
+            line = word
+        else
+            line = (line == "" and word) or (line .. " " .. word)
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line end
+    return table.concat(lines, "\n")
 end
+
+local function list(t) return type(t) == "table" and t or {} end
 
 -- World offset (x, z) relative to the station -> world position. positionToWorld works in
 -- local (scaled) units, so divide by scale to keep offsets in world units.
@@ -91,6 +146,23 @@ local function tableY()
     return b.center.y - b.size.y / 2
 end
 
+-- Board frame <-> world. The frame is stored when the board opens, so moving the station
+-- afterwards doesn't shift the cells. Unity yaw turns local +z toward world +x.
+local function frameToWorld(x, z, y)
+    local fr = board.frame
+    local a = math.rad(fr.yaw)
+    local c, s = math.cos(a), math.sin(a)
+    return Vector(fr.x + x * c + z * s, y or fr.y, fr.z - x * s + z * c)
+end
+
+local function worldToFrame(p)
+    local fr = board.frame
+    local a = math.rad(fr.yaw)
+    local c, s = math.cos(a), math.sin(a)
+    local dx, dz = p.x - fr.x, p.z - fr.z
+    return dx * c - dz * s, dx * s + dz * c
+end
+
 local function clearHighlights()
     for _, obj in ipairs(highlighted) do
         if obj ~= nil then obj.highlightOff() end   -- destroyed objects compare equal to nil
@@ -101,6 +173,10 @@ end
 local function highlight(obj, color)
     obj.highlightOn(color)
     highlighted[#highlighted + 1] = obj
+end
+
+local function isModel(obj)
+    return obj ~= nil and MODEL_NAMES[obj.name] and not obj.getLock() and not obj.hasTag(BOARD_TAG)
 end
 
 -- ============ TAGS ============
@@ -119,37 +195,73 @@ local function parseBagMarker(notes)
     return nil
 end
 
+-- s holds subfaction ids of any faction (a mercenary can be made for Knights of Avarice);
+-- i also allows "_" and faction ids (see the header).
 local function tagValid(t)
     local fe = config and factionIndex[t.f]
     if not fe or not fe.units[t.u] then return false end
-    for _, sid in ipairs(t.s or {}) do
-        if not fe.subs[sid] then return false end
+    for _, sid in ipairs(list(t.s)) do
+        if not subOwner[sid] then return false end
+    end
+    for _, x in ipairs(list(t.i)) do
+        if x ~= "_" and not subOwner[x] and not factionIndex[x] then return false end
     end
     return true
 end
 
-local function tagLabel(f, u, subs, imp)
-    local fe = factionIndex[f]
-    local fname = fe and fe.faction.name or tostring(f)
-    local uname = (fe and fe.units[u]) and fe.units[u].name or tostring(u)
-    local label = fname .. " / " .. uname
-    if subs and #subs > 0 then
-        local names = {}
-        for _, sid in ipairs(subs) do
-            names[#names + 1] = (fe and fe.subs[sid]) and fe.subs[sid].name or tostring(sid)
-        end
-        label = label .. " [" .. table.concat(names, ", ") .. "]"
+-- What a tag says, as single memberships {kind = "g"|"i", ctx}: one per board cell (on some
+-- board) the model belongs in.
+local function membershipsOf(t)
+    local out = {}
+    if t.k ~= "i" then
+        local s = list(t.s)
+        if #s == 0 then out[#out + 1] = {kind = "g", ctx = "_"} end
+        for _, sid in ipairs(s) do out[#out + 1] = {kind = "g", ctx = sid} end
+    end
+    for _, x in ipairs(list(t.i)) do out[#out + 1] = {kind = "i", ctx = x} end
+    if #out == 0 then out[1] = {kind = "g", ctx = "_"} end
+    return out
+end
+
+-- The tag of one membership.
+local function membershipTag(f, u, m, w, d)
+    local t = {tc = 1, f = f, u = u, s = {}, w = w, d = d}
+    if m.kind == "g" then
+        if m.ctx ~= "_" then t.s = {m.ctx} end
     else
-        label = label .. " (any subfaction)"
+        t.i, t.k = {m.ctx}, "i"
     end
-    if imp and #imp > 0 then
-        local names = {}
-        for _, id in ipairs(imp) do
-            names[#names + 1] = id == "_" and "Vanilla" or ((fe and fe.subs[id]) and fe.subs[id].name or tostring(id))
-        end
-        label = label .. " - import: " .. table.concat(names, ", ")
+    return t
+end
+
+-- Identity of a model for the duplicate check, like dedupe_key in tools/export.py: the
+-- object's own asset URLs and scale plus all attached parts.
+local function partKey(d)
+    local t = d.Transform or {}
+    local sc = string.format("%.3f,%.3f,%.3f", t.scaleX or 1, t.scaleY or 1, t.scaleZ or 1)
+    if d.CustomMesh then
+        return "m|" .. tostring(d.CustomMesh.MeshURL) .. "|" .. tostring(d.CustomMesh.DiffuseURL) .. "|" .. sc
+    elseif d.CustomAssetbundle then
+        return "b|" .. tostring(d.CustomAssetbundle.AssetbundleURL) .. "|"
+            .. tostring(d.CustomAssetbundle.AssetbundleSecondaryURL) .. "|" .. sc
+    elseif d.CustomImage then
+        return "i|" .. tostring(d.CustomImage.ImageURL) .. "|" .. sc
     end
-    return label
+    return ""
+end
+
+local modelKey
+function modelKey(d)   -- assigns the local above (recursive)
+    local parts = {}
+    for _, c in ipairs(d.ChildObjects or {}) do parts[#parts + 1] = modelKey(c) end
+    table.sort(parts)
+    return partKey(d) .. "{" .. table.concat(parts, ";") .. "}"
+end
+
+local function keyOf(obj)
+    local guid = obj.getGUID()
+    if not keyByGuid[guid] then keyByGuid[guid] = modelKey(obj.getData()) end
+    return keyByGuid[guid]
 end
 
 -- ============ STATUS / UI ============
@@ -162,80 +274,46 @@ local function setStatus(text)
     render()
 end
 
--- The panel's height is the sum of its rows, so it grows with the unit list.
+local function saveState()
+    self.script_state = onSave()
+end
+
+-- The panel's height is the sum of its rows.
 local function buildXml()
     local x, height = {}, 24   -- 24 = top + bottom padding
-    local function add(s) x[#x + 1] = s end
     local function row(h, s)
         height = height + h + 6   -- 6 = layout spacing
-        add(s)
+        x[#x + 1] = s
     end
+    local green = ' colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF"'
 
     row(30, '<Text preferredHeight="30" fontSize="22" fontStyle="Bold">TC Intake</Text>')
 
-    if config then
-        local fe = factionIndex[sel.f]
-
+    if config and board then
+        local fe = factionIndex[board.f]
+        row(30, '<Text preferredHeight="30" alignment="MiddleLeft">Board open: '
+            .. xmlEscape(fe and fe.faction.name or board.f) .. '</Text>')
+        row(66, '<Text preferredHeight="66" fontSize="15" alignment="UpperLeft" color="#BBBBBB">'
+            .. 'Drop new models into a cell, move models to retag them, copy a model (Ctrl+C / Ctrl+V) '
+            .. 'to put it in several cells, drop it on Discard to destroy it. Close stores everything.</Text>')
+        row(44, '<Button preferredHeight="44" onClick="ui_close"' .. green .. '>Close board (tag and store)</Button>')
+    elseif config then
         local opts = {}
         for _, f in ipairs(config.factions) do
             opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
         end
         row(40, '<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">' .. table.concat(opts) .. '</Dropdown>')
-
-        -- Units as buttons (three per row): switching unit is the most frequent action, and a
-        -- dropdown needs scrolling for long lists. The selected unit is green.
-        row(24, '<Text preferredHeight="24" alignment="MiddleLeft">Unit</Text>')
-        local units = fe.faction.units
-        local unitRows = math.ceil(#units / 3)
-        local b = {}
-        for _, u in ipairs(units) do
-            b[#b + 1] = '<Button id="u:' .. xmlEscape(u.id) .. '" onClick="ui_unit" fontSize="14"'
-                .. (u.id == sel.u and ' colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF"' or '')
-                .. '>' .. xmlEscape(u.name) .. '</Button>'
-        end
-        row(unitRows * 38, '<GridLayout cellSize="160 34" spacing="4 4" preferredHeight="' .. (unitRows * 38) .. '">'
-            .. table.concat(b) .. '</GridLayout>')
-
-        row(24, '<Text preferredHeight="24" alignment="MiddleLeft">Subfactions (none = any)</Text>')
-        local subs = fe.faction.subfactions or {}
-        if #subs == 0 then
-            row(26, '<Text preferredHeight="26" alignment="MiddleLeft" color="#AAAAAA">This faction has no subfactions.</Text>')
-        else
-            local t, subRows = {}, math.ceil(#subs / 2)
-            for _, sf in ipairs(subs) do
-                t[#t + 1] = '<Toggle id="sub:' .. xmlEscape(sf.id) .. '" isOn="' .. (sel.s[sf.id] and 'true' or 'false')
-                    .. '" onValueChanged="ui_sub">' .. xmlEscape(sf.name) .. '</Toggle>'
-            end
-            row(subRows * 34, '<GridLayout cellSize="240 30" spacing="4 4" preferredHeight="' .. (subRows * 34) .. '">'
-                .. table.concat(t) .. '</GridLayout>')
-        end
-
-        -- Import sets: which warband imports may use this model (Vanilla = no subfaction chosen).
-        row(24, '<Text preferredHeight="24" alignment="MiddleLeft">Import set (used by warband import)</Text>')
-        local sets = {{id = "_", name = "Vanilla"}}
-        for _, sf in ipairs(subs) do sets[#sets + 1] = sf end
-        local t, setRows = {}, math.ceil(#sets / 2)
-        for _, st in ipairs(sets) do
-            t[#t + 1] = '<Toggle id="imp:' .. xmlEscape(st.id) .. '" isOn="' .. (sel.imp[st.id] and 'true' or 'false')
-                .. '" onValueChanged="ui_imp">' .. xmlEscape(st.name) .. '</Toggle>'
-        end
-        row(setRows * 34, '<GridLayout cellSize="240 30" spacing="4 4" preferredHeight="' .. (setRows * 34) .. '">'
-            .. table.concat(t) .. '</GridLayout>')
-
-        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
-            .. '<Button onClick="ui_preview">Preview</Button>'
-            .. '<Button onClick="ui_submit" colors="#3A7A3A|#4A9A4A|#2A5A2A|#555555" textColor="#FFFFFF">Submit</Button>'
-            .. '<Button onClick="ui_clear">Clear</Button></HorizontalLayout>')
+        row(44, '<Button preferredHeight="44" onClick="ui_open"' .. green .. '>Open board</Button>')
     end
 
     row(36, '<HorizontalLayout preferredHeight="36" spacing="6">'
         .. (config and '<Button onClick="ui_unsorted" fontSize="16">Check unsorted</Button>' or '')
-        .. '<Button onClick="ui_reload" fontSize="16">Reload config</Button></HorizontalLayout>')
+        .. (board and '' or '<Button onClick="ui_reload" fontSize="16">Reload config</Button>')
+        .. '</HorizontalLayout>')
 
     row(160, '<Text preferredHeight="160" fontSize="16" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
 
-    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/>'
-        .. '<Toggle fontSize="16" textColor="#FFFFFF"/><Dropdown fontSize="18"/></Defaults>'
+    return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/><Dropdown fontSize="18"/></Defaults>'
         .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="520" height="' .. height
         .. '" scale="' .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">'
         .. '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
@@ -252,19 +330,41 @@ function render()   -- assigns the local declared above setStatus
     end, 1)
 end
 
--- Outline of the intake zone, drawn with vector lines in the station's local (scaled) space.
-local function drawZone()
-    local s, p = self.getScale(), self.getPosition()
-    local ly = (tableY() + 0.05 - p.y) / s.y
-    local hx, hz = ZONE_SIZE.x / 2, ZONE_SIZE.z / 2
-    local function corner(dx, dz)
-        return {(ZONE_OFFSET.x + dx) / s.x, ly, (ZONE_OFFSET.z + dz) / s.z}
+-- ============ JOB QUEUE ============
+-- Taking out, storing and spawning run BATCH_SIZE per frame, so a whole faction (hundreds of
+-- models) doesn't freeze the game. A job may return a number of frames to wait before the
+-- next one (e.g. to let the tiles exist before models drop onto them).
+local queue, queueRunning, queueDone = {}, false, nil
+
+local function runQueue()
+    local pause = 1
+    for _ = 1, BATCH_SIZE do
+        -- MoonSharp's table.remove throws on an empty table (standard Lua returns nil).
+        if #queue == 0 then break end
+        local job = table.remove(queue, 1)
+        -- One failing job must not stop the queue, or `busy` would stay set forever.
+        local ok, result = pcall(job)
+        if not ok then print("[TC Intake] " .. tostring(result)) end
+        if ok and type(result) == "number" then
+            pause = result
+            break
+        end
     end
-    self.setVectorLines({{
-        points    = {corner(-hx, -hz), corner(hx, -hz), corner(hx, hz), corner(-hx, hz), corner(-hx, -hz)},
-        color     = COLOR_NEW,
-        thickness = 0.05,
-    }})
+    if #queue > 0 then
+        Wait.frames(runQueue, pause)
+    else
+        queueRunning = false
+        local done = queueDone
+        queueDone = nil
+        if done then done() end
+    end
+end
+
+local function flushQueue(done)
+    queueDone = done
+    if queueRunning then return end
+    queueRunning = true
+    Wait.frames(runQueue, 1)
 end
 
 -- ============ CONFIG ============
@@ -273,35 +373,26 @@ local function applyConfig(text)
     if not ok or type(data) ~= "table" or type(data.factions) ~= "table" or #data.factions == 0 then
         config = nil
         setStatus("units.json could not be parsed (no factions).")
-        render()
         return
     end
 
-    config, factionIndex = data, {}
+    config, factionIndex, subOwner = data, {}, {}
     for fi, f in ipairs(data.factions) do
         local fe = {faction = f, index = fi, units = {}, unitIndex = {}, subs = {}}
-        for ui, u in ipairs(f.units or {}) do
+        f.units = f.units or {}
+        for ui, u in ipairs(f.units) do
             fe.units[u.id] = u
             fe.unitIndex[u.id] = ui
         end
-        for _, s in ipairs(f.subfactions or {}) do fe.subs[s.id] = s end
-        f.units = f.units or {}
+        for _, s in ipairs(f.subfactions or {}) do
+            fe.subs[s.id] = s
+            subOwner[s.id] = f.id
+        end
         factionIndex[f.id] = fe
     end
+    if not factionIndex[sel.f] then sel.f = data.factions[1].id end
 
-    -- Keep the saved selection only where it still exists in the config.
-    if not factionIndex[sel.f] then sel.f, sel.u, sel.s = data.factions[1].id, nil, {} end
-    local fe = factionIndex[sel.f]
-    if sel.u and not fe.units[sel.u] then sel.u = nil end
-    for id in pairs(sel.imp) do
-        if id ~= "_" and not fe.subs[id] then sel.imp[id] = nil end
-    end
-    for sid in pairs(sel.s) do
-        if not fe.subs[sid] then sel.s[sid] = nil end
-    end
-
-    setStatus("Config loaded: " .. #data.factions .. " faction(s). Drop models into the zone.")
-    render()
+    setStatus("Config loaded: " .. #data.factions .. " faction(s). Choose a faction and open its board.")
 end
 
 local function loadConfig()
@@ -316,100 +407,10 @@ local function loadConfig()
             config = nil
             setStatus("Could not load units.json (" .. tostring(req.error or req.response_code) .. ").\n"
                 .. "Push the repo or paste it into LOCAL_UNITS_JSON, then press Reload config.")
-            render()
             return
         end
         applyConfig(req.text)
     end)
-end
-
--- ============ ZONE ============
--- Returns {obj=, tag=} for every model in the zone and how many other objects were ignored.
-local function scanZone()
-    local origin = toWorld(ZONE_OFFSET.x, ZONE_OFFSET.z)
-    origin.y = tableY() + ZONE_SIZE.y / 2
-    local hits = Physics.cast({
-        origin       = origin,
-        direction    = {0, 1, 0},
-        type         = 3,   -- box
-        size         = {ZONE_SIZE.x, ZONE_SIZE.y, ZONE_SIZE.z},
-        orientation  = self.getRotation(),
-        max_distance = 0.01,   -- overlap check; objects inside the box at the start are reported
-    })
-
-    local items, ignored, seen = {}, 0, {}
-    for _, hit in ipairs(hits) do
-        local obj = hit.hit_object
-        -- Some hits (e.g. parts of the table) have no GUID; they're never models or tokens,
-        -- and a nil table key would throw.
-        local guid = obj and obj ~= self and obj.getGUID()
-        if guid and not seen[guid] then
-            seen[guid] = true
-            -- Locked objects are scenery/table parts: anything dragged in is unlocked.
-            if MODEL_NAMES[obj.name] and not obj.getLock() then
-                items[#items + 1] = {obj = obj, tag = parseTag(obj.getGMNotes())}
-            elseif obj.name ~= "Table_Custom" and obj.type ~= "Surface" then
-                ignored = ignored + 1
-            end
-        end
-    end
-    return items, ignored
-end
-
-local function selectionLabel()
-    if not sel.u then return nil end
-    return tagLabel(sel.f, sel.u, sortedKeys(sel.s), sortedKeys(sel.imp))
-end
-
--- Highlights the zone contents and describes them. autoSelect (from a drop) implements the
--- re-tag flow: if everything in the zone carries the same valid tag, load it into the menu.
-local function preview(autoSelect, droppedObj)
-    if not config or busy then return end
-    local items, ignored = scanZone()
-
-    if droppedObj then
-        local found = false
-        for _, it in ipairs(items) do
-            if it.obj == droppedObj then found = true break end
-        end
-        if not found then return end
-    end
-
-    clearHighlights()
-    local tagged, groups, order, invalid = 0, {}, {}, 0
-    for _, it in ipairs(items) do
-        if it.tag then
-            tagged = tagged + 1
-            if not tagValid(it.tag) then invalid = invalid + 1 end
-            local label = tagLabel(it.tag.f, it.tag.u, it.tag.s, it.tag.i)
-            if not groups[label] then groups[label] = 0; order[#order + 1] = label end
-            groups[label] = groups[label] + 1
-            highlight(it.obj, tagValid(it.tag) and COLOR_RETAG or COLOR_BAD)
-        else
-            highlight(it.obj, COLOR_NEW)
-        end
-    end
-
-    if autoSelect and #items > 0 and tagged == #items and #order == 1 and invalid == 0 then
-        local t = items[1].tag
-        sel.f, sel.u, sel.s, sel.imp = t.f, t.u, {}, {}
-        for _, sid in ipairs(t.s or {}) do sel.s[sid] = true end
-        for _, id in ipairs(t.i or {}) do sel.imp[id] = true end
-        render()
-    end
-
-    local lines = {}
-    lines[#lines + 1] = "Zone: " .. #items .. " model(s)" .. (ignored > 0 and (", " .. ignored .. " other object(s) ignored") or "") .. "."
-    if tagged > 0 then
-        lines[#lines + 1] = "Already tagged (yellow, red = invalid):"
-        for i, label in ipairs(order) do
-            if i > 6 then lines[#lines + 1] = "  ..." break end
-            lines[#lines + 1] = "  " .. groups[label] .. "x " .. label
-        end
-    end
-    local target = selectionLabel()
-    lines[#lines + 1] = target and ("Submit tags as: " .. target) or "Choose a unit before submitting."
-    setStatus(table.concat(lines, "\n"))
 end
 
 -- ============ STORAGE BAGS ============
@@ -459,12 +460,389 @@ local function ensureBag(f, u, callback)
     })
 end
 
--- ============ SUBMIT ============
-local function tagObject(obj, f, u, subs, imp)
+-- ============ BOARD GEOMETRY ============
+-- A Mercenaries unit on a faction board (hired mercenary or a unit every warband can get) has
+-- no Vanilla General cell (untagged ones belong to the Mercenaries board). A hired mercenary
+-- also has no cells in the rows of a subfaction whose own `mercenaries` list leaves it out
+-- (Trench Ghosts hire none).
+local function isMercColumn(col) return col.f ~= board.f end
+
+local function cellExists(col, row)
+    if not isMercColumn(col) then return true end
+    if row.kind == "g" and row.ctx == "_" then return false end
+    if row.mercs and not col.everyone then
+        for _, uid in ipairs(row.mercs) do
+            if uid == col.u then return true end
+        end
+        return false
+    end
+    return true
+end
+
+-- Row index of membership m in column col on the open board, or nil if it belongs elsewhere.
+local function rowFor(col, m)
+    local ctx = m.ctx
+    if isMercColumn(col) then
+        if m.kind == "g" and ctx == "_" then return nil end
+        if m.kind == "i" then
+            if ctx == "_" then return nil end          -- the Mercenaries board's own pick
+            if ctx == board.f then ctx = "_" end        -- this faction's vanilla pick
+        end
+    end
+    return board.rowIndex[m.kind .. ":" .. ctx]
+end
+
+-- The membership a cell stands for (inverse of rowFor).
+local function cellMembership(col, row)
+    if row.kind == "i" and row.ctx == "_" and isMercColumn(col) then return {kind = "i", ctx = board.f} end
+    return {kind = row.kind, ctx = row.ctx}
+end
+
+local function cellName(c, r)
+    return board.cols[c].name .. " / " .. board.rows[r].name
+end
+
+-- Where a world position lies: "cell", col, row / "discard" / "board" (on the board but not
+-- in a cell: labels, gaps, missing cells) / nil (off the board).
+local function locate(p)
+    local x, z = worldToFrame(p)
+    local bd = board.bounds
+    if x < bd.x0 or x > bd.x1 or z < bd.z0 or z > bd.z1 then return nil end
+    if z >= board.discard.z0 then return "discard" end
+    for c, col in ipairs(board.cols) do
+        if x >= col.x0 and x <= col.x1 then
+            for r, row in ipairs(board.rows) do
+                if z >= row.z0 and z <= row.z1 then
+                    if cellExists(col, row) then return "cell", c, r end
+                    return "board"
+                end
+            end
+        end
+    end
+    return "board"
+end
+
+-- Packs items ({w, d}) into shelves inside a cell of the given width; sets item.x / item.z
+-- (centre, from the cell's near-left corner) and returns the depth used.
+local function shelve(items, width)
+    local x, z, rowD = CELL_PAD, CELL_PAD, 0
+    for _, it in ipairs(items) do
+        if x > CELL_PAD and x + it.w + CELL_PAD > width then
+            x, z, rowD = CELL_PAD, z + rowD + CELL_PAD, 0
+        end
+        it.x, it.z = x + it.w / 2, z + it.d / 2
+        x = x + it.w + CELL_PAD
+        if it.d > rowD then rowD = it.d end
+    end
+    return z + rowD + CELL_PAD
+end
+
+-- Columns and rows of a faction's board, without sizes.
+local function boardSkeleton(fe)
+    local b = {f = fe.faction.id, cols = {}, rows = {}, colIndex = {}, rowIndex = {}}
+    local function addCol(f, u, suffix, everyone)
+        b.cols[#b.cols + 1] = {f = f, u = u.id, name = u.name .. (suffix or ""), everyone = everyone}
+        b.colIndex[f .. "/" .. u.id] = #b.cols
+    end
+    for _, u in ipairs(fe.faction.units) do addCol(b.f, u) end
+    local mercs = factionIndex[MERC]
+    if b.f ~= MERC and mercs then
+        for _, uid in ipairs(fe.faction.mercenaries or {}) do
+            if mercs.units[uid] then addCol(MERC, mercs.units[uid], " (merc)") end
+        end
+        -- Units every warband can get (Golem, an exploration reward). Not mercenaries, so a
+        -- subfaction's own mercenaries list doesn't remove them.
+        for _, u in ipairs(mercs.faction.units) do
+            if u.everyone and not b.colIndex[MERC .. "/" .. u.id] then addCol(MERC, u, nil, true) end
+        end
+    end
+    local contexts = {{id = "_", name = "Vanilla"}}
+    for _, sf in ipairs(fe.faction.subfactions or {}) do contexts[#contexts + 1] = sf end
+    for _, ctx in ipairs(contexts) do
+        for _, kind in ipairs({"g", "i"}) do
+            b.rows[#b.rows + 1] = {kind = kind, ctx = ctx.id, name = ctx.name .. (kind == "g" and " - General" or " - Import"),
+                                   mercs = ctx.mercenaries}
+            b.rowIndex[kind .. ":" .. ctx.id] = #b.rows
+        end
+    end
+    return b
+end
+
+-- ============ OPEN BOARD ============
+local function spawnTile(cx, cz, w, d, color, name)
+    local pos = frameToWorld(cx, cz, board.frame.y + TILE_THICKNESS / 2)
+    spawnObjectData({
+        data = {
+            Name = "BlockSquare", Nickname = name,
+            Transform = {posX = pos.x, posY = pos.y, posZ = pos.z, rotX = 0, rotY = board.frame.yaw, rotZ = 0,
+                         scaleX = 1, scaleY = 1, scaleZ = 1},
+            ColorDiffuse = {r = color[1], g = color[2], b = color[3]},
+            Locked = true, Tooltip = false, Grid = false, Snap = false, Tags = {BOARD_TAG},
+        },
+        -- A block's native size isn't known up front, so it is scaled once it exists.
+        callback_function = function(obj)
+            local size, scale = obj.getBoundsNormalized().size, obj.getScale()
+            obj.setScale({scale.x * w / size.x, scale.y * TILE_THICKNESS / size.y, scale.z * d / size.z})
+        end,
+    })
+end
+
+local function spawnLabel(text, cx, cz)
+    spawnObject({
+        type     = "3DText",
+        position = frameToWorld(cx, cz, board.frame.y + TILE_THICKNESS + 0.05),
+        rotation = {LABEL_PITCH, board.frame.yaw + LABEL_YAW, 0},
+        callback_function = function(obj)
+            obj.TextTool.setValue(text)
+            obj.TextTool.setFontSize(LABEL_FONT)
+            obj.addTag(BOARD_TAG)
+        end,
+    })
+end
+
+-- A model taken out of its bag: it becomes its first cell's membership, every further
+-- membership becomes a copy (on this board: in its cell; elsewhere: back into the bag).
+local function onTaken(obj, take)
+    local first = take.places[1]
+    obj.setGMNotes(JSON.encode(membershipTag(take.f, take.u, first.m, take.w, take.d)))
+    obj.highlightOff()
+    for k = 2, #take.places do
+        local p = take.places[k]
+        local d = obj.getData()
+        d.GUID = nil
+        d.GMNotes = JSON.encode(membershipTag(take.f, take.u, p.m, take.w, take.d))
+        spawnObjectData({data = d, position = p.pos, rotation = take.rot})
+    end
+    for _, m in ipairs(take.off) do
+        local d = obj.getData()
+        d.GUID = nil
+        d.GMNotes = JSON.encode(membershipTag(take.f, take.u, m, take.w, take.d))
+        local bp = take.bag.getPosition()
+        spawnObjectData({data = d, position = {bp.x, bp.y + 4, bp.z}, callback_function = function(o)
+            if take.bag ~= nil then take.bag.putObject(o) end
+        end})
+    end
+end
+
+local function openBoard()
+    if busy or board or not config then return end
+    local fe = factionIndex[sel.f]
+    if not fe then return end
+    clearHighlights()
+    board = boardSkeleton(fe)
+    keyByGuid = {}
+
+    -- Bags of every column, found in one pass.
+    local bags = {}
+    for _, obj in ipairs(getAllObjects()) do
+        local m = parseBagMarker(obj.getGMNotes())
+        if m and m.f and m.u and board.colIndex[m.f .. "/" .. m.u] then bags[m.f .. "/" .. m.u] = obj end
+    end
+
+    -- Plan: which bag entries come out, and into which cells.
+    local cells = {}     -- "c:r" -> items {w, d, place}
+    local takes, untagged, foreign, copies = {}, 0, 0, 0
+    for _, col in ipairs(board.cols) do
+        local bag = bags[col.f .. "/" .. col.u]
+        for _, entry in ipairs(bag and bag.getObjects() or {}) do
+            local tag = parseTag(entry.gm_notes)
+            local c = tag and board.colIndex[tostring(tag.f) .. "/" .. tostring(tag.u)]
+            if not tag then
+                untagged = untagged + 1
+            elseif not c then
+                foreign = foreign + 1   -- tagged for a unit that isn't on this board: stays in the bag
+            else
+                local take = {bag = bag, guid = entry.guid, f = tag.f, u = tag.u, places = {}, off = {},
+                              w = tonumber(tag.w) or DEFAULT_SIZE, d = tonumber(tag.d) or DEFAULT_SIZE}
+                for _, m in ipairs(membershipsOf(tag)) do
+                    local r = rowFor(board.cols[c], m)
+                    if r then
+                        local place = {c = c, r = r, m = m}
+                        take.places[#take.places + 1] = place
+                        local key = c .. ":" .. r
+                        cells[key] = cells[key] or {}
+                        table.insert(cells[key], {w = take.w, d = take.d, place = place})
+                    else
+                        take.off[#take.off + 1] = m
+                    end
+                end
+                if #take.places > 0 then
+                    takes[#takes + 1] = take
+                    copies = copies + #take.places + #take.off - 1
+                end
+            end
+        end
+    end
+
+    -- Sizes: each column wide enough for its fullest cell at roughly 2:1, each row as deep as
+    -- its deepest cell plus spare room.
+    local totalW = ROW_LABEL_W
+    for c, col in ipairs(board.cols) do
+        local area, widest = 0, 0
+        for r = 1, #board.rows do
+            local a = 0
+            for _, it in ipairs(cells[c .. ":" .. r] or {}) do
+                a = a + (it.w + CELL_PAD) * (it.d + CELL_PAD)
+                if it.w > widest then widest = it.w end
+            end
+            if a > area then area = a end
+        end
+        col.w = math.max(MIN_COL_W, widest + 2 * CELL_PAD, math.min(MAX_COL_W, math.sqrt(area * 2)))
+        totalW = totalW + CELL_GAP + col.w
+    end
+    local s = self.getBounds().size
+    local half = math.max(s.x, s.z) / 2
+    local left = -(half + BOARD_GAP + totalW)
+    local x = left + ROW_LABEL_W
+    for _, col in ipairs(board.cols) do
+        col.x0 = x + CELL_GAP
+        col.x1 = col.x0 + col.w
+        x = col.x1
+    end
+    local z0 = -half
+    local z = z0 + HEADER_D
+    for r, row in ipairs(board.rows) do
+        local depth = MIN_ROW_D
+        for c, col in ipairs(board.cols) do
+            local used = shelve(cells[c .. ":" .. r] or {}, col.w) + SPARE_D
+            if used > depth then depth = used end
+        end
+        row.z0 = z + CELL_GAP
+        row.z1 = row.z0 + depth
+        z = row.z1
+    end
+    board.discard = {z0 = z + CELL_GAP * 2, z1 = z + CELL_GAP * 2 + DISCARD_D}
+    board.bounds = {x0 = left, x1 = x, z0 = z0, z1 = board.discard.z1}
+
+    local rot = self.getRotation()
+    local pos = self.getPosition()
+    board.frame = {x = pos.x, y = tableY(), z = pos.z, yaw = rot.y}
+    local modelRot = {0, rot.y + MODEL_YAW, 0}
+    for key, items in pairs(cells) do
+        local sep = string.find(key, ":", 1, true)
+        local col, row = board.cols[tonumber(string.sub(key, 1, sep - 1))], board.rows[tonumber(string.sub(key, sep + 1))]
+        for _, it in ipairs(items) do
+            it.place.pos = frameToWorld(col.x0 + it.x, row.z0 + it.z, board.frame.y + TILE_THICKNESS + 0.4)
+        end
+    end
+    busy = true
+    saveState()
+    setStatus("Opening the " .. fe.faction.name .. " board...")
+
+    -- Tiles and labels first, then the models.
+    queue[#queue + 1] = function()
+        local bd = board.bounds
+        spawnTile((bd.x0 + bd.x1) / 2, z0 + HEADER_D / 2, bd.x1 - bd.x0, HEADER_D, COLOR_HEADER, "Board header")
+        for _, col in ipairs(board.cols) do
+            spawnLabel(wrapWords(col.name, 16), (col.x0 + col.x1) / 2, z0 + HEADER_D / 2)
+        end
+    end
+    for _, row in ipairs(board.rows) do
+        queue[#queue + 1] = function()
+            spawnLabel(wrapWords(row.name, 18), left + ROW_LABEL_W / 2, (row.z0 + row.z1) / 2)
+            for _, col in ipairs(board.cols) do
+                if cellExists(col, row) then
+                    spawnTile((col.x0 + col.x1) / 2, (row.z0 + row.z1) / 2, col.w, row.z1 - row.z0,
+                        row.kind == "i" and COLOR_IMPORT or COLOR_GENERAL, col.name .. " / " .. row.name)
+                end
+            end
+        end
+    end
+    queue[#queue + 1] = function()
+        local bd = board.bounds
+        spawnTile((bd.x0 + bd.x1) / 2, (board.discard.z0 + board.discard.z1) / 2, bd.x1 - bd.x0, DISCARD_D,
+            COLOR_DISCARD, "Discard")
+        spawnLabel("DISCARD - destroyed on Close", (bd.x0 + bd.x1) / 2, (board.discard.z0 + board.discard.z1) / 2)
+        return 10   -- let the tiles exist and be scaled before models drop onto them
+    end
+    for _, take in ipairs(takes) do
+        take.rot = modelRot
+        queue[#queue + 1] = function()
+            if take.bag == nil then return end
+            take.bag.takeObject({guid = take.guid, position = take.places[1].pos, rotation = modelRot, smooth = false,
+                callback_function = function(obj) pcall(onTaken, obj, take) end})
+        end
+    end
+    flushQueue(function()
+        busy = false
+        local lines = {"Board open: " .. #takes .. " model(s) taken out."}
+        if copies > 0 then lines[#lines + 1] = copies .. " copies made from models with several tags." end
+        if untagged > 0 then lines[#lines + 1] = untagged .. " untagged object(s) left in the bags (Check unsorted)." end
+        if foreign > 0 then lines[#lines + 1] = foreign .. " model(s) in these bags are tagged for other units and stayed there." end
+        setStatus(table.concat(lines, "\n"))
+    end)
+end
+
+-- ============ DROP FEEDBACK ============
+-- After a drop: which cell the model is in, how many models that cell holds, and whether the
+-- same model (same assets and scale, see modelKey) is already on the board. Red = already in
+-- this cell (a real duplicate), yellow = in other cells (often an intended copy).
+local function checkDrops()
+    local drops = pendingDrops
+    pendingDrops = {}
+    if not board or busy then return end
+
+    local byKey, perCell = {}, {}
+    for _, obj in ipairs(getAllObjects()) do
+        if isModel(obj) then
+            local where, c, r = locate(obj.getPosition())
+            if where == "cell" then
+                local k = keyOf(obj)
+                byKey[k] = byKey[k] or {}
+                table.insert(byKey[k], {obj = obj, c = c, r = r})
+                perCell[c .. ":" .. r] = (perCell[c .. ":" .. r] or 0) + 1
+            end
+        end
+    end
+
+    clearHighlights()
+    local lines = {}
+    for _, obj in ipairs(drops) do
+        if obj ~= nil then
+            local where, c, r = locate(obj.getPosition())
+            if where == "discard" then
+                highlight(obj, COLOR_BAD)
+                lines[#lines + 1] = "On Discard: destroyed when the board closes."
+            elseif where == "board" then
+                highlight(obj, COLOR_BAD)
+                lines[#lines + 1] = "Not in a cell: move it into one."
+            elseif where == "cell" then
+                local same, other = false, {}
+                for _, hit in ipairs(byKey[keyOf(obj)] or {}) do
+                    if hit.obj ~= obj then
+                        if hit.c == c and hit.r == r then same = true
+                        else other[#other + 1] = cellName(hit.c, hit.r) end
+                    end
+                end
+                local line = cellName(c, r) .. ": " .. (perCell[c .. ":" .. r] or 0) .. " model(s)."
+                if same then
+                    highlight(obj, COLOR_BAD)
+                    line = line .. " DUPLICATE: this model is already in this cell."
+                elseif #other > 0 then
+                    highlight(obj, COLOR_WARN)
+                    line = line .. " Also in: " .. table.concat(other, ", ", 1, math.min(#other, 3))
+                        .. (#other > 3 and ", ..." or "")
+                else
+                    highlight(obj, COLOR_OK)
+                end
+                lines[#lines + 1] = line
+            end
+        end
+    end
+    if #lines > 0 then
+        if #lines > 6 then
+            local n = #lines
+            lines = {lines[1], lines[2], lines[3], lines[4], lines[5], "... and " .. (n - 5) .. " more"}
+        end
+        setStatus(table.concat(lines, "\n"))
+    end
+end
+
+-- ============ CLOSE BOARD ============
+local function storeTag(obj, col, row)
     -- Bounds are not in the save JSON; the spawner needs the footprint before models load.
     local size = obj.getBounds().size
-    local tag = {tc = 1, f = f, u = u, s = subs, w = round(size.x, 2), d = round(size.z, 2)}
-    if #imp > 0 then tag.i = imp end
+    local tag = membershipTag(col.f, col.u, cellMembership(col, row), round(size.x, 2), round(size.z, 2))
     obj.setGMNotes(JSON.encode(tag))
     -- Only the stored script changes here; the running copy dies when the object enters the bag.
     obj.setLuaScript("")
@@ -475,56 +853,87 @@ local function tagObject(obj, f, u, subs, imp)
     obj.highlightOff()
 end
 
-local function submit()
-    if busy then return end
-    if not config then setStatus("No config loaded.") return end
-    if not sel.u then setStatus("Choose a unit before submitting.") return end
-
-    local items = scanZone()
-    if #items == 0 then setStatus("No models in the zone.") return end
-
-    busy = true
+local function closeBoard()
+    if busy or not board then return end
     clearHighlights()
-    local f, u, subs, imp = sel.f, sel.u, sortedKeys(sel.s), sortedKeys(sel.imp)
-    local label = tagLabel(f, u, subs, imp)
-    local total = #items
-    setStatus("Tagging " .. total .. " model(s) as " .. label .. "...")
 
-    ensureBag(f, u, function(bag)
-        local function step()
-            for _ = 1, BATCH_SIZE do
-                -- MoonSharp's table.remove throws on an empty table (standard Lua returns nil).
-                if #items == 0 then break end
-                local it = table.remove(items, 1)
-                if it.obj ~= nil then
-                    tagObject(it.obj, f, u, subs, imp)
-                    bag.putObject(it.obj)
-                end
-            end
-            if #items > 0 then
-                Wait.frames(step, 1)
-            else
-                busy = false
-                setStatus("Tagged " .. total .. " model(s) as " .. label .. "\nStored in bag: " .. bag.getName())
+    local stores, discards, stray = {}, {}, 0
+    for _, obj in ipairs(getAllObjects()) do
+        if isModel(obj) then
+            local where, c, r = locate(obj.getPosition())
+            if where == "cell" then
+                stores[#stores + 1] = {obj = obj, col = board.cols[c], row = board.rows[r]}
+            elseif where == "discard" then
+                discards[#discards + 1] = obj
+            elseif where == "board" then
+                stray = stray + 1
+                highlight(obj, COLOR_BAD)
             end
         end
-        step()
-    end)
+    end
+    if stray > 0 then
+        setStatus(stray .. " model(s) lie on the board outside any cell (red). Move them into a cell "
+            .. "or onto Discard, then close again.")
+        return
+    end
+
+    busy = true
+    setStatus("Storing " .. #stores .. " model(s)...")
+    -- Bags first (creating a missing one is asynchronous), one after another.
+    local order, seen, bagOf = {}, {}, {}
+    for _, st in ipairs(stores) do
+        local key = st.col.f .. "/" .. st.col.u
+        if not seen[key] then
+            seen[key] = true
+            order[#order + 1] = st.col
+        end
+    end
+    local i = 0
+    local function nextBag()
+        i = i + 1
+        local col = order[i]
+        if col then
+            ensureBag(col.f, col.u, function(bag)
+                bagOf[col.f .. "/" .. col.u] = bag
+                nextBag()
+            end)
+            return
+        end
+        for _, st in ipairs(stores) do
+            queue[#queue + 1] = function()
+                if st.obj == nil then return end
+                storeTag(st.obj, st.col, st.row)
+                bagOf[st.col.f .. "/" .. st.col.u].putObject(st.obj)
+            end
+        end
+        for _, obj in ipairs(discards) do
+            queue[#queue + 1] = function() if obj ~= nil then obj.destruct() end end
+        end
+        for _, obj in ipairs(getAllObjects()) do
+            if obj.hasTag(BOARD_TAG) then queue[#queue + 1] = function() if obj ~= nil then obj.destruct() end end end
+        end
+        flushQueue(function()
+            busy = false
+            local name = factionIndex[board.f] and factionIndex[board.f].faction.name or board.f
+            board, keyByGuid = nil, {}
+            saveState()
+            setStatus("Board closed: " .. #stores .. " model(s) tagged and stored in " .. #order .. " bag(s)"
+                .. (#discards > 0 and (", " .. #discards .. " destroyed") or "") .. " (" .. name .. ").")
+        end)
+    end
+    nextBag()
 end
 
 -- ============ UNSORTED CHECK ============
--- Loose models outside the zone without a valid tag, and bag contents whose tag is missing,
+-- Loose models (off the board) without a valid tag, and bag contents whose tag is missing,
 -- invalid or for a different unit than the bag.
 local function checkUnsorted()
     if not config or busy then return end
     clearHighlights()
 
-    local inZone = {}
-    for _, it in ipairs(scanZone()) do inZone[it.obj.getGUID()] = true end
-
     local loose, problems = 0, {}
     for _, obj in ipairs(getAllObjects()) do
-        if MODEL_NAMES[obj.name] and not inZone[obj.getGUID()] then
+        if isModel(obj) and not (board and locate(obj.getPosition())) then
             local t = parseTag(obj.getGMNotes())
             if not t or not tagValid(t) then
                 loose = loose + 1
@@ -549,7 +958,7 @@ local function checkUnsorted()
         end
     end
 
-    local lines = {"Loose untagged models: " .. loose .. (loose > 0 and " (highlighted red)" or "")}
+    local lines = {"Loose untagged models off the board: " .. loose .. (loose > 0 and " (highlighted red)" or "")}
     if #problems == 0 then
         lines[#lines + 1] = "All storage bags OK."
     else
@@ -565,72 +974,47 @@ end
 -- XML UI passes (player, value, id). Dropdown value is the selected option's text.
 function ui_faction(player, value)
     for _, f in ipairs(config.factions) do
-        if f.name == value and f.id ~= sel.f then
-            sel.f, sel.u, sel.s, sel.imp = f.id, nil, {}, {}
-            render()
+        if f.name == value then
+            sel.f = f.id
+            saveState()
             break
         end
     end
 end
 
--- Unit buttons have id "u:<unit id>".
-function ui_unit(player, value, id)
-    sel.u = string.sub(id, 3)
-    render()   -- highlight the selected button
-    preview(false)
-end
-
-function ui_sub(player, value, id)
-    local sid = string.sub(id, 5)   -- strip "sub:"
-    sel.s[sid] = (value == "True") or nil
-    preview(false)
-end
-
-function ui_preview() preview(false) end
-function ui_imp(player, value, id)
-    sel.imp[string.sub(id, 5)] = (value == "True") or nil   -- strip "imp:"
-    preview(false)
-end
-
-function ui_submit() submit() end
+function ui_open() openBoard() end
+function ui_close() closeBoard() end
 function ui_unsorted() checkUnsorted() end
-
-function ui_reload() loadConfig() end
-
-function ui_clear()
-    sel.u, sel.s, sel.imp = nil, {}, {}
-    clearHighlights()
-    status = "Selection cleared."
-    render()
-end
+function ui_reload() if not board then loadConfig() end end
 
 -- ============ EVENTS ============
--- Global event, also delivered to object scripts. Debounced so dropping a stack of
--- models triggers one preview.
+-- Global event, also delivered to object scripts. Debounced so dropping a stack of models
+-- gives one report.
 function onObjectDrop(player_color, obj)
-    if busy or not config or obj == nil or not MODEL_NAMES[obj.name] then return end
+    if busy or not board or not isModel(obj) then return end
+    pendingDrops[#pendingDrops + 1] = obj
     dropToken = dropToken + 1
     local token = dropToken
     Wait.time(function()
-        if token == dropToken and obj ~= nil then preview(true, obj) end
+        if token == dropToken then checkDrops() end
     end, 0.5)
 end
 
 function onSave()
-    return JSON.encode({sel = {f = sel.f, u = sel.u, s = sortedKeys(sel.s), imp = sortedKeys(sel.imp)}})
+    return JSON.encode({f = sel.f, board = board})
 end
 
 function onLoad(saved_data)
     if saved_data and saved_data ~= "" then
         local ok, data = pcall(JSON.decode, saved_data)
-        if ok and type(data) == "table" and data.sel then
-            sel.f, sel.u, sel.s = data.sel.f, data.sel.u, {}
-            for _, sid in ipairs(data.sel.s or {}) do sel.s[sid] = true end
-            sel.imp = {}
-            for _, id in ipairs(data.sel.imp or {}) do sel.imp[id] = true end
+        if ok and type(data) == "table" then
+            sel.f = data.f or (data.sel and data.sel.f)   -- data.sel: older intake versions
+            -- An open board's tiles and models were saved with the game; only its geometry
+            -- needs restoring.
+            if type(data.board) == "table" and data.board.frame then board = data.board end
         end
     end
-    drawZone()
+    self.setVectorLines({})   -- older versions outlined an intake zone
     render()
     loadConfig()
 end
