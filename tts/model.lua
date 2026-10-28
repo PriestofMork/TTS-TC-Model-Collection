@@ -36,8 +36,11 @@ local TOKEN_LAYERS = 6      -- stacked layers that form the token's edge
 local TOKEN_STEP   = 2      -- depth between two layers
 local ICON_SIZE    = 55     -- image tokens
 
-local MIN_HEIGHT   = 1.2    -- inches: markers float at least this high above the base's bottom
-local FOOT_HEIGHT  = 1.35   -- estimated model height per inch of base width (see modelTop)
+-- Model height by base width, in inches: {largest base width, height}. 25 mm, 32 mm, 40 mm,
+-- 50 mm, 60 mm, bigger. See modelTop.
+local BASE_HEIGHTS = {{1.05, 1.5}, {1.35, 1.75}, {1.65, 2.0}, {2.1, 2.5}, {2.6, 3.0}, {math.huge, 3.6}}
+local HEADROOM     = 1.0    -- inches added to BASE_HEIGHTS, so unusually tall models stay clear
+local SCULPT_COLLIDER = 0.5 -- inches: an object this tall has the sculpt in its own collider
 
 -- Markers around the activation token: dice on a half circle above it, image tokens on one
 -- below it (as the player sees the model when spawned).
@@ -91,16 +94,18 @@ end
 
 -- ============ GEOMETRY ============
 -- Top of the whole model. The tagged object is usually just the base with the sculpt attached;
--- attached parts have no collider, so getBounds and raycasts only see the base. The visual
--- bounds include them on some models (a 3.9" Sorcerer measured right) but not on others
--- (tested: ~1.4" Lieutenants measured 0.25", asset-bundle sculpts about their scale), so the
--- height is also estimated from the base: models are at least FOOT_HEIGHT times as tall as
--- their base is wide. The larger value wins. (Visual bounds don't include the UI panel.)
+-- attached parts have no collider, so getBounds only sees the base, and getVisualBounds was
+-- wrong both ways (tested: ~1.4" Lieutenants measured 0.25", asset bundles about their
+-- scale). So the height comes from the base width (BASE_HEIGHTS), which is always measured
+-- right. Objects whose own collider is already tall (the sculpt is part of the mesh) use it.
 local function modelTop()
     local b = self.getBounds()
-    local foot = math.max(b.size.x, b.size.z) * FOOT_HEIGHT
-    local h = math.max(self.getVisualBoundsNormalized().size.y, foot, MIN_HEIGHT)
-    return b.center.y - b.size.y / 2 + h
+    local bottom = b.center.y - b.size.y / 2
+    if b.size.y >= SCULPT_COLLIDER then return bottom + b.size.y end
+    local width = math.max(b.size.x, b.size.z)
+    for _, step in ipairs(BASE_HEIGHTS) do
+        if width <= step[1] then return bottom + step[2] + HEADROOM end
+    end
 end
 
 -- Point k of n on a half circle around the activation token, in panel inches (x to the side,
