@@ -1,5 +1,5 @@
 {
- "version": 9,
+ "version": 10,
  "factions": [
   {
    "id": "new-antioch",
@@ -30,54 +30,94 @@
      "name": "The Red Brigade"
     }
    ],
+   "mercenaries": [
+    "communicant-anti-tank-hunter",
+    "mendelist-ammo-monk",
+    "mamluk-faris",
+    "observer",
+    "combat-biologist",
+    "witchburner",
+    "dogs",
+    "scripture-guardian"
+   ],
    "units": [
     {
      "id": "lieutenant",
      "name": "Lieutenant",
-     "count": 16,
-     "any": 12,
+     "count": 34,
+     "any": 14,
      "subs": {
-      "papal-states-intervention-force": 1,
-      "stosstruppen-of-the-free-state-of-prussia": 2,
-      "the-red-brigade": 1
+      "eire-rangers": 2,
+      "expeditionary-forces-of-abyssinia": 2,
+      "kingdom-of-alba-assault-detatchment": 3,
+      "papal-states-intervention-force": 3,
+      "stosstruppen-of-the-free-state-of-prussia": 5,
+      "the-red-brigade": 6
      },
      "file": "units/new-antioch/lieutenant.json"
     },
     {
      "id": "sniper-priest",
      "name": "Sniper Priest",
-     "count": 4,
-     "any": 4,
-     "subs": {},
+     "count": 15,
+     "any": 8,
+     "subs": {
+      "eire-rangers": 1,
+      "kingdom-of-alba-assault-detatchment": 1,
+      "stosstruppen-of-the-free-state-of-prussia": 3,
+      "the-red-brigade": 2
+     },
      "file": "units/new-antioch/sniper-priest.json"
     },
     {
      "id": "trench-cleric",
      "name": "Trench Cleric",
-     "count": 7,
-     "any": 5,
+     "count": 19,
+     "any": 8,
      "subs": {
-      "papal-states-intervention-force": 1,
-      "stosstruppen-of-the-free-state-of-prussia": 1
+      "eire-rangers": 1,
+      "expeditionary-forces-of-abyssinia": 1,
+      "kingdom-of-alba-assault-detatchment": 1,
+      "papal-states-intervention-force": 2,
+      "stosstruppen-of-the-free-state-of-prussia": 4,
+      "the-red-brigade": 2
      },
      "file": "units/new-antioch/trench-cleric.json"
     },
     {
      "id": "combat-engineer",
      "name": "Combat Engineer",
-     "count": 3,
-     "any": 3,
-     "subs": {},
+     "count": 9,
+     "any": 4,
+     "subs": {
+      "eire-rangers": 1,
+      "kingdom-of-alba-assault-detatchment": 1,
+      "stosstruppen-of-the-free-state-of-prussia": 1,
+      "the-red-brigade": 2
+     },
      "file": "units/new-antioch/combat-engineer.json"
+    },
+    {
+     "id": "combat-medic",
+     "name": "Combat Medic",
+     "count": 3,
+     "any": 1,
+     "subs": {
+      "the-red-brigade": 2
+     },
+     "file": "units/new-antioch/combat-medic.json"
     },
     {
      "id": "mechanized-heavy-infantry",
      "name": "Mechanized Heavy Infantry",
-     "count": 13,
-     "any": 9,
+     "count": 29,
+     "any": 14,
      "subs": {
-      "papal-states-intervention-force": 2,
-      "stosstruppen-of-the-free-state-of-prussia": 2
+      "eire-rangers": 1,
+      "kingdom-of-alba-assault-detatchment": 3,
+      "papal-states-intervention-force": 3,
+      "stosstruppen-of-the-free-state-of-prussia": 4,
+      "the-red-brigade": 4
      },
      "file": "units/new-antioch/mechanized-heavy-infantry.json",
      "companion": [
@@ -87,24 +127,42 @@
     {
      "id": "shocktrooper",
      "name": "Shocktrooper",
-     "count": 11,
-     "any": 5,
+     "count": 33,
+     "any": 11,
      "subs": {
-      "kingdom-of-alba-assault-detatchment": 3,
-      "papal-states-intervention-force": 2,
-      "stosstruppen-of-the-free-state-of-prussia": 1
+      "eire-rangers": 2,
+      "expeditionary-forces-of-abyssinia": 1,
+      "kingdom-of-alba-assault-detatchment": 5,
+      "papal-states-intervention-force": 3,
+      "stosstruppen-of-the-free-state-of-prussia": 5,
+      "the-red-brigade": 6
      },
      "file": "units/new-antioch/shocktrooper.json"
     },
     {
      "id": "yeoman",
      "name": "Yeoman",
-     "count": 15,
-     "any": 14,
+     "count": 34,
+     "any": 19,
      "subs": {
-      "papal-states-intervention-force": 1
+      "eire-rangers": 3,
+      "expeditionary-forces-of-abyssinia": 2,
+      "kingdom-of-alba-assault-detatchment": 1,
+      "papal-states-intervention-force": 2,
+      "stosstruppen-of-the-free-state-of-prussia": 3,
+      "the-red-brigade": 4
      },
      "file": "units/new-antioch/yeoman.json"
+    },
+    {
+     "id": "crimson-communicant",
+     "name": "Crimson Communicant",
+     "count": 1,
+     "any": 0,
+     "subs": {
+      "the-red-brigade": 1
+     },
+     "file": "units/new-antioch/crimson-communicant.json"
     }
    ]
   },
@@ -125,56 +183,91 @@
      "name": "War Pilgrimage of Saint Methodius"
     }
    ],
+   "mercenaries": [
+    "communicant-anti-tank-hunter",
+    "sister-of-saint-cosmas",
+    "mendelist-ammo-monk",
+    "observer",
+    "witchburner",
+    "dogs",
+    "scripture-guardian"
+   ],
    "units": [
     {
      "id": "war-prophet",
      "name": "War Prophet",
-     "count": 1,
-     "any": 1,
-     "subs": {},
+     "count": 8,
+     "any": 5,
+     "subs": {
+      "procession-of-the-sacred-affliction": 2,
+      "war-pilgrimage-of-saint-methodius": 1
+     },
      "file": "units/trench-pilgrims/war-prophet.json"
     },
     {
      "id": "castigator",
      "name": "Castigator",
-     "count": 3,
-     "any": 2,
+     "count": 10,
+     "any": 4,
      "subs": {
-      "procession-of-the-sacred-affliction": 1
+      "procession-of-the-sacred-affliction": 6
      },
      "file": "units/trench-pilgrims/castigator.json"
     },
     {
      "id": "communicant",
      "name": "Communicant",
-     "count": 1,
-     "any": 1,
-     "subs": {},
+     "count": 6,
+     "any": 4,
+     "subs": {
+      "procession-of-the-sacred-affliction": 2
+     },
      "file": "units/trench-pilgrims/communicant.json"
     },
     {
      "id": "anchorite-shrine",
      "name": "Anchorite Shrine",
-     "count": 1,
-     "any": 1,
-     "subs": {},
+     "count": 8,
+     "any": 6,
+     "subs": {
+      "procession-of-the-sacred-affliction": 1,
+      "war-pilgrimage-of-saint-methodius": 1
+     },
      "file": "units/trench-pilgrims/anchorite-shrine.json"
     },
     {
      "id": "ecclesiastic-prisoner",
      "name": "Ecclesiastic Prisoner",
-     "count": 1,
-     "any": 1,
-     "subs": {},
+     "count": 5,
+     "any": 5,
+     "subs": {
+      "cavalcade-of-the-tenth-plague": 1,
+      "procession-of-the-sacred-affliction": 1,
+      "war-pilgrimage-of-saint-methodius": 1
+     },
      "file": "units/trench-pilgrims/ecclesiastic-prisoner.json"
     },
     {
      "id": "stigmatic-nun",
      "name": "Stigmatic Nun",
-     "count": 1,
-     "any": 1,
-     "subs": {},
+     "count": 21,
+     "any": 15,
+     "subs": {
+      "procession-of-the-sacred-affliction": 5,
+      "war-pilgrimage-of-saint-methodius": 2
+     },
      "file": "units/trench-pilgrims/stigmatic-nun.json"
+    },
+    {
+     "id": "trench-pilgrim",
+     "name": "Trench Pilgrim",
+     "count": 17,
+     "any": 11,
+     "subs": {
+      "procession-of-the-sacred-affliction": 4,
+      "war-pilgrimage-of-saint-methodius": 2
+     },
+     "file": "units/trench-pilgrims/trench-pilgrim.json"
     }
    ]
   },
@@ -195,12 +288,18 @@
      "name": "Defenders of the Iron Wall"
     }
    ],
+   "mercenaries": [
+    "mamluk-faris",
+    "combat-biologist",
+    "dogs",
+    "scripture-guardian"
+   ],
    "units": [
     {
      "id": "yuzbasi-captain",
      "name": "Yüzbaşı Captain",
-     "count": 1,
-     "any": 1,
+     "count": 6,
+     "any": 6,
      "subs": {},
      "file": "units/iron-sultanate/yuzbasi-captain.json",
      "companion": [
@@ -210,44 +309,84 @@
     {
      "id": "jabirean-alchemist",
      "name": "Jabirean Alchemist",
-     "count": 1,
-     "any": 1,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/iron-sultanate/jabirean-alchemist.json"
     },
     {
      "id": "sultanate-assassin",
      "name": "Sultanate Assassin",
-     "count": 3,
-     "any": 1,
+     "count": 6,
+     "any": 6,
      "subs": {
-      "fidai-of-alamut-the-cabal-of-assassins": 2
+      "defenders-of-the-iron-wall": 1
      },
      "file": "units/iron-sultanate/sultanate-assassin.json"
     },
     {
      "id": "azeb",
      "name": "Azeb",
-     "count": 3,
-     "any": 3,
+     "count": 14,
+     "any": 14,
      "subs": {},
      "file": "units/iron-sultanate/azeb.json"
     },
     {
+     "id": "brazen-bull",
+     "name": "Brazen Bull",
+     "count": 6,
+     "any": 6,
+     "subs": {},
+     "file": "units/iron-sultanate/brazen-bull.json"
+    },
+    {
+     "id": "janissary",
+     "name": "Janissary",
+     "count": 11,
+     "any": 10,
+     "subs": {
+      "fidai-of-alamut-the-cabal-of-assassins": 1
+     },
+     "file": "units/iron-sultanate/janissary.json",
+     "companion": [
+      "janissaries"
+     ]
+    },
+    {
      "id": "lion-of-jabir",
      "name": "Lion of Jabir",
-     "count": 1,
-     "any": 1,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/iron-sultanate/lion-of-jabir.json"
     },
     {
      "id": "sultanate-sapper",
      "name": "Sultanate Sapper",
+     "count": 5,
+     "any": 5,
+     "subs": {},
+     "file": "units/iron-sultanate/sultanate-sapper.json"
+    },
+    {
+     "id": "takwin-homunculus",
+     "name": "Takwin Homunculus",
+     "count": 5,
+     "any": 5,
+     "subs": {},
+     "file": "units/iron-sultanate/takwin-homunculus.json",
+     "companion": [
+      "takwincreation"
+     ]
+    },
+    {
+     "id": "sipahi-automaton-cavalry",
+     "name": "Sipahi Automaton Cavalry",
      "count": 1,
      "any": 1,
      "subs": {},
-     "file": "units/iron-sultanate/sultanate-sapper.json"
+     "file": "units/iron-sultanate/sipahi-automaton-cavalry.json"
     }
    ]
   },
@@ -257,7 +396,8 @@
    "subfactions": [
     {
      "id": "trench-ghosts",
-     "name": "Trench Ghosts"
+     "name": "Trench Ghosts",
+     "mercenaries": []
     },
     {
      "id": "knights-of-avarice",
@@ -267,6 +407,12 @@
      "id": "heretic-naval-raiders",
      "name": "Heretic Naval Raiders"
     }
+   ],
+   "mercenaries": [
+    "sin-eater",
+    "goetic-warlock",
+    "hellhound",
+    "scripture-guardian"
    ],
    "units": [
     {
@@ -376,62 +522,96 @@
      "name": "The Great Hunger"
     }
    ],
+   "mercenaries": [
+    "sin-eater",
+    "hellhound",
+    "scripture-guardian"
+   ],
    "units": [
     {
      "id": "lord-of-tumors",
      "name": "Lord of Tumors",
-     "count": 1,
-     "any": 1,
+     "count": 7,
+     "any": 7,
      "subs": {},
      "file": "units/cult-of-the-black-grail/lord-of-tumors.json"
     },
     {
+     "id": "plague-knight",
+     "name": "Plague Knight",
+     "count": 5,
+     "any": 5,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/plague-knight.json"
+    },
+    {
      "id": "corpse-guard",
      "name": "Corpse Guard",
-     "count": 2,
-     "any": 2,
+     "count": 9,
+     "any": 9,
      "subs": {},
      "file": "units/cult-of-the-black-grail/corpse-guard.json"
     },
     {
      "id": "amalgam",
      "name": "Amalgam",
-     "count": 1,
-     "any": 1,
+     "count": 3,
+     "any": 3,
      "subs": {},
      "file": "units/cult-of-the-black-grail/amalgam.json"
     },
     {
      "id": "grail-thrall",
      "name": "Grail Thrall",
-     "count": 2,
-     "any": 2,
-     "subs": {},
+     "count": 15,
+     "any": 13,
+     "subs": {
+      "dirge-of-the-great-hegemon": 2
+     },
      "file": "units/cult-of-the-black-grail/grail-thrall.json"
     },
     {
      "id": "fly-thrall",
      "name": "Fly Thrall",
-     "count": 2,
-     "any": 2,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/cult-of-the-black-grail/fly-thrall.json"
     },
     {
      "id": "herald-of-beelzebub",
      "name": "Herald of Beelzebub",
-     "count": 1,
-     "any": 1,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/cult-of-the-black-grail/herald-of-beelzebub.json"
     },
     {
      "id": "hounds-of-the-black-grail",
      "name": "Hounds of the Black Grail",
+     "count": 6,
+     "any": 6,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/hounds-of-the-black-grail.json"
+    },
+    {
+     "id": "matagot-hag",
+     "name": "Matagot Hag",
      "count": 1,
      "any": 1,
      "subs": {},
-     "file": "units/cult-of-the-black-grail/hounds-of-the-black-grail.json"
+     "file": "units/cult-of-the-black-grail/matagot-hag.json"
+    },
+    {
+     "id": "gregori-gula",
+     "name": "Gregori Gula",
+     "count": 5,
+     "any": 5,
+     "subs": {},
+     "file": "units/cult-of-the-black-grail/gregori-gula.json",
+     "companion": [
+      "gergorigula"
+     ]
     }
    ]
   },
@@ -468,60 +648,68 @@
      "name": "Greed"
     }
    ],
+   "mercenaries": [
+    "sin-eater",
+    "goetic-warlock",
+    "hellhound",
+    "scripture-guardian"
+   ],
    "units": [
     {
      "id": "praetor",
      "name": "Praetor",
-     "count": 1,
-     "any": 1,
+     "count": 2,
+     "any": 2,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/praetor.json"
     },
     {
      "id": "sorcerer",
      "name": "Sorcerer",
-     "count": 1,
-     "any": 1,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/sorcerer.json"
     },
     {
      "id": "hell-knight",
      "name": "Hell Knight",
-     "count": 3,
-     "any": 3,
-     "subs": {},
+     "count": 9,
+     "any": 8,
+     "subs": {
+      "greed": 1
+     },
      "file": "units/court-of-the-seven-headed-serpent/hell-knight.json"
     },
     {
      "id": "hunter-of-the-left-hand-path",
      "name": "Hunter of the Left-Hand Path",
-     "count": 1,
-     "any": 1,
+     "count": 2,
+     "any": 2,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/hunter-of-the-left-hand-path.json"
     },
     {
      "id": "desecrated-saint",
      "name": "Desecrated Saint",
-     "count": 1,
-     "any": 1,
+     "count": 2,
+     "any": 2,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/desecrated-saint.json"
     },
     {
      "id": "pit-locust",
      "name": "Pit Locust",
-     "count": 1,
-     "any": 1,
+     "count": 3,
+     "any": 3,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/pit-locust.json"
     },
     {
      "id": "wretched",
      "name": "Wretched",
-     "count": 3,
-     "any": 3,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/wretched.json",
      "companion": [
@@ -531,8 +719,8 @@
     {
      "id": "yoke-fiend",
      "name": "Yoke Fiend",
-     "count": 4,
-     "any": 4,
+     "count": 7,
+     "any": 7,
      "subs": {},
      "file": "units/court-of-the-seven-headed-serpent/yoke-fiend.json"
     }
@@ -570,16 +758,16 @@
     {
      "id": "mamluk-faris",
      "name": "Mamluk Faris",
-     "count": 7,
-     "any": 7,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/mercenaries/mamluk-faris.json"
     },
     {
      "id": "mendelist-ammo-monk",
      "name": "Mendelist Ammo Monk",
-     "count": 6,
-     "any": 6,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/mendelist-ammo-monk.json"
     },
@@ -594,24 +782,24 @@
     {
      "id": "scripture-guardian",
      "name": "Scripture Guardian",
-     "count": 5,
-     "any": 5,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/scripture-guardian.json"
     },
     {
      "id": "sin-eater",
      "name": "Sin Eater",
-     "count": 6,
-     "any": 6,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/sin-eater.json"
     },
     {
      "id": "sister-of-saint-cosmas",
      "name": "Sister of Saint Cosmas",
-     "count": 5,
-     "any": 5,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/sister-of-saint-cosmas.json",
      "companion": [
@@ -621,8 +809,8 @@
     {
      "id": "witchburner",
      "name": "Witchburner",
-     "count": 4,
-     "any": 4,
+     "count": 3,
+     "any": 3,
      "subs": {},
      "file": "units/mercenaries/witchburner.json"
     },
@@ -635,17 +823,29 @@
      "file": "units/mercenaries/golem.json",
      "companion": [
       "md_takwincreation_golem"
-     ]
+     ],
+     "everyone": true
     },
     {
      "id": "dogs",
      "name": "Dogs",
-     "count": 1,
-     "any": 1,
+     "count": 14,
+     "any": 14,
      "subs": {},
      "file": "units/mercenaries/dogs.json",
      "companion": [
       "trenchdog"
+     ]
+    },
+    {
+     "id": "hellhound",
+     "name": "Hellhound",
+     "count": 3,
+     "any": 3,
+     "subs": {},
+     "file": "units/mercenaries/hellhound.json",
+     "companion": [
+      "md_trenchdog_hellhound"
      ]
     }
    ]

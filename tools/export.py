@@ -4,8 +4,8 @@ Usage:
     python tools/export.py "<path to TS_Save_N.json>" [--dry-run]
 
 Reads every object whose GM Notes hold a {"tc":1,...} tag (written by tts/intake.lua),
-including models inside bags, validates the tags against config/units.json, removes
-duplicates, cleans the TTS object data and writes:
+including models inside bags, validates the tags against config/units.json, merges copies
+of the same model within a unit, cleans the TTS object data and writes:
 
     catalog/units/<faction>/<unit>.json   one file per unit, one model per line
     catalog/index.json                    small menu index for the spawner
@@ -47,41 +47,93 @@ def parse_tag(notes):
     return tag if isinstance(tag, dict) and tag.get("tc") == 1 else None
 
 
+MERC = "mercenaries"
+
+
 def load_config():
     config = json.loads(CONFIG.read_text(encoding="utf-8"))
     lookup = {}
+    all_subs = set()
     for faction in config["factions"]:
+        subs = {s["id"] for s in faction.get("subfactions", [])}
+        all_subs |= subs
         lookup[faction["id"]] = {
             "faction": faction,
             "units": {u["id"]: u for u in faction.get("units", [])},
-            "subs": {s["id"] for s in faction.get("subfactions", [])},
+            "subs": subs,
         }
+    # A mercenary can be made for, or picked by, any faction's subfaction (a Goetic Warlock
+    # for Knights of Avarice); its vanilla import picks per faction use the faction id.
+    lookup[MERC]["subs"] = all_subs
+    lookup[MERC]["imports"] = all_subs | set(lookup) - {MERC}
     return config, lookup
 
 
+def as_list(value):
+    if isinstance(value, dict):  # TTS's JSON.encode can write an empty table as {}
+        return list(value.values())
+    return list(value or [])
+
+
 def validate(tag, lookup):
-    """Return (faction_id, unit_id, subs, imp, w, d) or raise ValueError with the reason.
-    imp = import sets the model belongs to: "_" (vanilla) and/or subfaction ids."""
+    """Return (faction_id, unit_id, subs, imp, is_import_copy, w, d) or raise ValueError.
+    subs = theme (subfactions the model was made for, empty = vanilla); imp = import
+    contexts that prefer it ("_" = vanilla, subfaction ids, and for mercenaries faction ids);
+    is_import_copy = written by an Import row of the sorting board (k = "i"): s means nothing."""
     f, u = tag.get("f"), tag.get("u")
     entry = lookup.get(f)
     if not entry:
         raise ValueError(f"unknown faction '{f}'")
     if u not in entry["units"]:
         raise ValueError(f"unknown unit '{u}' in faction '{f}'")
-    subs = tag.get("s") or []
-    if isinstance(subs, dict):  # TTS's JSON.encode can write an empty table as {}
-        subs = list(subs.values())
+    subs = as_list(tag.get("s"))
     unknown = [s for s in subs if s not in entry["subs"]]
     if unknown:
-        raise ValueError(f"unknown subfaction(s) {unknown} in faction '{f}'")
-    imp = tag.get("i") or []
-    bad_imp = [i for i in imp if i != "_" and i not in entry["subs"]]
+        raise ValueError(f"unknown subfaction(s) {unknown} for faction '{f}'")
+    imp = as_list(tag.get("i"))
+    allowed = entry.get("imports", entry["subs"])
+    bad_imp = [i for i in imp if i != "_" and i not in allowed]
     if bad_imp:
-        raise ValueError(f"unknown import set(s) {bad_imp} in faction '{f}'")
+        raise ValueError(f"unknown import context(s) {bad_imp} for faction '{f}'")
+    k = tag.get("k")
+    if k not in (None, "i"):
+        raise ValueError(f"unknown copy kind k='{k}'")
+    if k == "i" and not imp:
+        raise ValueError("import copy without an import context")
     w, d = tag.get("w"), tag.get("d")
     if not all(isinstance(v, (int, float)) and v > 0 for v in (w, d)):
         raise ValueError("missing or invalid footprint w/d (re-tag it in the intake)")
-    return f, u, sorted(set(subs)), sorted(set(imp)), float(w), float(d)
+    return f, u, sorted(set(subs)), sorted(set(imp)), k == "i", float(w), float(d)
+
+
+def merge_copies(copies, lookup):
+    """Theme (s) and import contexts (i) of one model from all its copies in one unit.
+    copies = [(subs, imp, is_import_copy)]. The sorting board writes one cell per object, so
+    a model in several cells arrives as several copies:
+      - s = union of the General copies' themes; a vanilla General copy adds "_" when themed
+        copies exist too (empty s alone = vanilla);
+      - i = union of all copies' import contexts;
+      - a model with no General copy (only in Import rows) counts as General for each of its
+        import contexts: moving a model into an Import row is the natural workflow.
+        "_" and faction ids (a mercenary's per-faction vanilla pick) mean vanilla."""
+    themes, vanilla, imports = set(), False, set()
+    general = [c for c in copies if not c[2]]
+    for subs, imp, _ in general:
+        themes |= set(subs)
+        vanilla |= not subs
+        imports |= set(imp)
+    for subs, imp, _ in copies:
+        imports |= set(imp)
+    if not general:
+        for ctx in imports:
+            if ctx == "_" or ctx in lookup:
+                vanilla = True
+            else:
+                themes.add(ctx)
+    s = sorted(themes)
+    if vanilla and themes:
+        s.append("_")
+    return s, sorted(imports)
 
 
 # ---------------------------------------------------------------- cleaning
@@ -194,7 +246,8 @@ def main():
 
     warnings = []
     units = {}  # (f, u) -> {dedupe key or index: entry}
-    tagged = 0
+    copies = {}  # (f, u, key) -> [(subs, imp, is_import_copy)], merged after reading
+    tagged = merged = 0
     for obj in iter_objects(save.get("ObjectStates", [])):
         tag = parse_tag(obj.get("GMNotes"))
         if not tag:
@@ -203,29 +256,35 @@ def main():
         name = (obj.get("Nickname") or obj.get("Name") or "").splitlines()[0] if (obj.get("Nickname") or obj.get("Name")) else "?"
         label = f"'{name}' ({obj.get('GUID', '?')})"
         try:
-            f, u, subs, imp, w, d = validate(tag, lookup)
+            f, u, subs, imp, is_import, w, d = validate(tag, lookup)
         except ValueError as err:
             warnings.append(f"SKIPPED {label}: {err}")
             continue
 
         key = dedupe_key(obj)
-        data, w, d = clean(json.loads(json.dumps(obj)), lookup[f]["units"][u]["name"], w, d)
-        entry = {"s": subs, "w": round(w, 2), "d": round(d, 2), "data": data}
-        if imp:
-            entry["i"] = imp   # import sets (see validate)
         bucket = units.setdefault((f, u), {})
         if key is None:
             warnings.append(f"no mesh/asset URL on {label}; kept without duplicate check")
-            bucket[("nokey", len(bucket))] = entry
-        elif key in bucket:
-            # Same model tagged twice for this unit: keep one, widen its subfactions.
-            kept = bucket[key]
-            kept["s"] = [] if not kept["s"] or not subs else sorted(set(kept["s"]) | set(subs))
-            if imp:
-                kept["i"] = sorted(set(kept.get("i", [])) | set(imp))
-            warnings.append(f"duplicate in {f}/{u}: {label} (asset {short_key(key)})")
-        else:
-            bucket[key] = entry
+            key = ("nokey", len(bucket))
+        if key in bucket:
+            # Another copy of a model already in this unit. Copies in different board cells
+            # are intended and merged; the same cell twice is a real duplicate.
+            group = copies[(f, u, key)]
+            if (subs, imp, is_import) in group:
+                warnings.append(f"duplicate in {f}/{u}: {label} (asset {short_key(key)})")
+            else:
+                merged += 1
+            group.append((subs, imp, is_import))
+            continue
+        data, w, d = clean(json.loads(json.dumps(obj)), lookup[f]["units"][u]["name"], w, d)
+        bucket[key] = {"w": round(w, 2), "d": round(d, 2), "data": data}
+        copies[(f, u, key)] = [(subs, imp, is_import)]
+
+    for (f, u, key), group in copies.items():
+        entry = units[(f, u)][key]
+        entry["s"], imp = merge_copies(group, lookup)
+        if imp:
+            entry["i"] = imp
 
     # Same model under several units is intended: one model can fit several units (e.g. a
     # Takwin Homunculus that is also a Golem). The maintainer copies it in TTS and tags the
@@ -254,28 +313,36 @@ def main():
             entries = [bucket[k] for k in sorted(bucket, key=lambda k: json.dumps(k))]
             rel = f"units/{f}/{unit['id']}.json"
             files[rel] = dump_unit(entries)
-            # The spawner's subfaction filter shows any + subs[filter] models for a unit.
+            # Spawner filters: Vanilla shows `any`, a subfaction C shows subs[C] (or `any`
+            # when that is 0), All shows `count`.
             subs = {}
             for e in entries:
                 for s in e["s"]:
-                    subs[s] = subs.get(s, 0) + 1
+                    if s != "_":
+                        subs[s] = subs.get(s, 0) + 1
             entry = {
                 "id": unit["id"], "name": unit["name"], "count": len(entries),
-                "any": sum(1 for e in entries if not e["s"]),  # usable by every subfaction
-                "subs": dict(sorted(subs.items())),            # subfaction id -> model count
+                "any": sum(1 for e in entries if not e["s"] or "_" in e["s"]),  # vanilla models
+                "subs": dict(sorted(subs.items())),            # subfaction id -> models made for it
                 "file": rel,
             }
             # Trench Companion model ids that don't match the unit name (warband import).
             if unit.get("companion"):
                 entry["companion"] = unit["companion"]
+            if unit.get("everyone"):
+                entry["everyone"] = True   # every warband can get it (Golem)
             index_units.append(entry)
             summary.append(f"  {faction['name']} / {unit['name']}: {len(entries)}")
         if index_units:
-            index_factions.append({
+            # Subfactions are copied whole: they may carry their own `mercenaries` list.
+            index_faction = {
                 "id": f, "name": faction["name"],
                 "subfactions": faction.get("subfactions", []),
-                "units": index_units,
-            })
+            }
+            if "mercenaries" in faction:
+                index_faction["mercenaries"] = faction["mercenaries"]   # units it can hire
+            index_faction["units"] = index_units
+            index_factions.append(index_faction)
 
     # ---- decide whether anything changed (index compared without its version number)
     version_path = CATALOG / "version.json"
@@ -296,7 +363,7 @@ def main():
 
     # ---- report
     total = sum(len(b) for b in units.values())
-    print(f"Tagged objects found: {tagged}, exported models: {total}")
+    print(f"Tagged objects found: {tagged}, exported models: {total}, copies merged: {merged}")
     print("\n".join(summary) or "  (nothing to export)")
     if shared:
         print(f"\nModels used by several units ({len(shared)}):")
