@@ -1,5 +1,5 @@
 {
  "catalog": 10,
- "spawner": 9,
+ "spawner": 10,
  "spawnerUrl": "tts/spawner.lua"
 }

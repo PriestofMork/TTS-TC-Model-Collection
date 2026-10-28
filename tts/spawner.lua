@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 9
+local SPAWNER_VERSION = 10
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -73,12 +73,6 @@ local COL_ALL    = "#6B5420|#80662A|#4E3D17|#6B5420"    -- "Spawn whole faction"
 local COL_ICON   = "#FFFFFF|#FFFFFF|#CCCCCC|#FFFFFF"
 local COL_DIM    = "#707070|#B0B0B0|#909090|#707070"    -- faction icons that aren't open
 
--- The hub's invisible click button (createButton).
-local BU         = 500       -- button units per world inch (measured)
-local BUTTON_YAW = 0         -- button text reads upright from the object's local +z side (tested)
-local CLEAR      = {0, 0, 0, 0}
-local HOVER      = {1, 1, 1, 0.12}
-local PRESSED    = {1, 1, 1, 0.25}
 local UI_TAG     = "TCM_UI"  -- menu tokens of v8 (spawned objects); leftovers are removed on load
 
 -- Art for the action icons (Trench Crusade art by Mike Franchina, hotlinked from ArtStation).
@@ -112,7 +106,6 @@ local unitCache    = {}      -- unit file -> decoded entries (for the loaded cat
 local scriptsOn    = true    -- put tts/model.lua into spawned models
 local modelScript  = nil     -- tts/model.lua, fetched on load
 local listMode     = "units" -- what the console's list column shows: "units", "import", "settings"
-local collapsed    = false   -- the hub was clicked: only the status stays
 local importText   = ""      -- what was pasted; kept here, the box itself isn't re-rendered
 
 -- ============ UTIL ============
@@ -120,10 +113,10 @@ local function xmlEscape(s)
     return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
 end
 
--- The spawner is always the same object: a Custom_Tile with the Wolf art (published at scale
--- 2, 1, 2). HUB_SIZE is its size at scale 1, measured in TTS. It isn't measured at run time
--- because getBoundsNormalized also counts the object's buttons.
-local HUB_SIZE = {x = 1.4775, y = 0.2, z = 2}
+-- The spawner is always the same object: a Custom_Tile with Mike Franchina's Sword Saint art
+-- (published at scale 1.5, 1, 1.5). HUB_SIZE is its size at scale 1, measured in TTS; it's a
+-- constant because getBoundsNormalized would also count any buttons on the object.
+local HUB_SIZE = {x = 2.5686, y = 0.2, z = 2}
 
 -- The spawner's size in world units, rotation ignored.
 local function hubBounds()
@@ -268,15 +261,6 @@ local function setStatus(text)
     render()
 end
 
--- The hub's own button: one invisible button over it (clicking collapses / expands the console).
-local function drawHub()
-    self.clearButtons()
-    local s, b = self.getScale(), hubBounds()
-    self.createButton({click_function = "tok_hub", function_owner = self, label = "",
-        position = {0, (b.y / 2 + 0.02) / s.y, 0}, rotation = {0, BUTTON_YAW, 0}, scale = {1 / s.x, 1 / s.y, 1 / s.z},
-        width = b.x * BU, height = b.z * BU, color = CLEAR, hover_color = HOVER, press_color = PRESSED})
-end
-
 -- The images the console uses, by name (setCustomAssets fails on a nil URL).
 local function loadAssets()
     local assets = {}
@@ -300,8 +284,8 @@ local function importBox()
     row(22, '<Text preferredHeight="22" fontSize="17" alignment="MiddleLeft">1. Open this page in your browser:</Text>')
     row(36, '<InputField preferredHeight="36" fontSize="17" readOnly="true" lineType="SingleLine">'
         .. CODE_PAGE .. '</InputField>')
-    row(48, '<Text preferredHeight="48" fontSize="17" alignment="MiddleLeft">2. Paste your Trench Companion TTS export there '
-        .. 'and copy the code. 3. Paste the code here:</Text>')
+    row(66, '<Text preferredHeight="66" fontSize="17" alignment="MiddleLeft">2. In Trench Companion: Export Warband, '
+        .. 'style "TTS JSON", Copy to Clipboard. Paste it on that page and copy the code. 3. Paste the code here:</Text>')
     row(40, '<InputField id="importBox" preferredHeight="40" fontSize="17" lineType="SingleLine" '
         .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
     row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
@@ -341,7 +325,10 @@ local function buildXml()
         '<Text width="' .. n(STATUS_W - 0.3) .. '" height="' .. n(2 * hd - 0.3) .. '" alignment="UpperLeft" fontSize="26">'
         .. xmlEscape(status) .. '</Text>')
 
-    if index and not collapsed then
+    if not index then
+        -- The catalog didn't load (no connection?): a way to try again.
+        row(-hb.x / 2 + LIST_W / 2, -hd - CON_GAP - ROW_H / 2, LIST_W, ROW_H, "reload", COL_ROW, "Reload catalog")
+    else
         -- Action icons below the hub, with their names under them.
         local ay = -hd - CON_GAP - ACTION / 2
         local actions = {{"import", "Import"}, {"settings", "Settings"}, {"clear", "Clear all"}}
@@ -424,7 +411,6 @@ function render()
     renderPending = true
     Wait.frames(function()
         renderPending = false
-        drawHub()
         self.UI.setXml(buildXml())
     end, 1)
 end
@@ -877,9 +863,10 @@ local function importPicks(all, theme, vanillaKeys)
 end
 
 -- Spawns a whole warband on one platform labelled with its name. Each warband member gets a
--- catalog model of its unit; copies of the same unit get different models where the catalog
--- has several. The subfaction open in the menu applies to the selected faction's units and
--- its mercenaries. Mercenaries get the warband's faction for their activation icon.
+-- catalog model of its unit (found by its Trench Companion model id, whatever faction is open
+-- in the console); copies of the same unit get different models where the catalog has several.
+-- The export doesn't name the warband's subfaction, so models come from the vanilla picks.
+-- Mercenaries get the warband's faction (the most common one) for their activation icon.
 -- mode "models": catalog models (see importPicks). mode "slots": one slot per member instead.
 local function importWarband(warband, mode, done)
     local members, missing, order = {}, {}, {}
@@ -895,7 +882,7 @@ local function importWarband(warband, mode, done)
             missing[name] = (missing[name] or 0) + 1
         end
     end
-    local warbandFaction, best = sel.f, 0
+    local warbandFaction, best = nil, 0
     for f, n in pairs(factionVotes) do
         if n > best then warbandFaction, best = f, n end
     end
@@ -920,11 +907,8 @@ local function importWarband(warband, mode, done)
                 items[#items + 1] = {data = slotData(name, desc, warbandFaction, uid, tostring(mb.m.name)),
                                      w = 1.4, d = 1.4, raw = true, size = {1.3, 1.3}, label = tostring(mb.m.name)}
             else
-                -- The subfaction only means something for the selected faction's units and
-                -- the mercenaries it hires.
-                local merc = mb.hit.f == MERC and warbandFaction ~= MERC
-                local theme = (sel.sub ~= "_" and (mb.hit.f == sel.f or merc)) and sel.sub or nil
-                local list = importPicks(entriesByKey[key] or {}, theme, merc and {warbandFaction or "_", "_"} or {"_"})
+                local merc = mb.hit.f == MERC and warbandFaction ~= nil
+                local list = importPicks(entriesByKey[key] or {}, nil, merc and {warbandFaction, "_"} or {"_"})
                 if #list > 0 then
                     used[key] = (used[key] or 0) + 1
                     local e = list[(used[key] - 1) % #list + 1]
@@ -1157,10 +1141,8 @@ function ACTIONS.import()
     if listMode == "import" then listMode = "units" render() return end
     if not notBusy() then return end
     listMode, importText = "import", ""
-    local fe = factionById[sel.f]
-    setStatus(fe and ("Models are picked for " .. fe.name .. (sel.sub and (" (" .. subName(fe, sel.sub) .. ")") or "")
-            .. ". Pick another faction first to change that.")
-        or "Tip: pick your faction (and subfaction) first, so the import picks fitting models.")
+    setStatus('In Trench Companion: Export Warband, export style "TTS JSON", Copy to Clipboard. '
+        .. "Then follow the steps in the import box.")
 end
 
 function ACTIONS.settings()
@@ -1189,16 +1171,6 @@ function ui_click(player, value, id)
     end
 end
 
--- Click on the hub: collapse the console to the status, or open it again.
-function tok_hub()
-    if not index then
-        setStatus("The catalog isn't loaded yet. Loading it again...")
-        loadCatalog()
-        return
-    end
-    collapsed = not collapsed
-    render()
-end
 
 -- ============ WARBAND IMPORT CALLBACKS (XML) ============
 -- Unpacks a code from the converter page ("TCM1" + JSON, see docs/index.html) into the shape

@@ -10,13 +10,13 @@
 --  * Activation: once the model is taken off the spawner's platform, its faction token floats
 --    above it (object UI). Click it to toggle ready / activated (greyed). "Ready all" in the
 --    right-click menu readies every model and saves each one's position (start of a round).
---  * Dice: drop any die onto the model. The real die stays, locked, floating beside the
---    activation token, and moves with the model. Hover it and press 1-6 to turn it to that
---    face; press 0 to take it off (it lands beside the model as a normal die).
+--  * Dice: drop any die onto the model. The real die stays, locked, floating on a half circle
+--    above the activation token, and moves with the model. Hover it and press 1-6 to turn it
+--    to that face; press 0 to take it off (it lands beside the model as a normal die).
 --  * Swapping (warband members only): drop a catalog model of the same unit onto a warband
 --    model; the dropped model takes over its name, rules, activation, dice and place.
 --  * Image tokens: drop a token tagged TCUITokenSimple / TCUITokenEquipment onto the model.
---    It shows as an icon above the model; click the icon to remove it.
+--    It shows as an icon on a half circle below the activation token; click it to remove it.
 --
 -- Why dice are locked: locked objects ignore physics, so they can't drift, fall or be pushed.
 -- Earlier attempts with gravity switched off, attachments or UI dice all failed (see CLAUDE.md).
@@ -35,9 +35,14 @@ local TOKEN_LAYERS = 6      -- stacked layers that form the token's edge
 local TOKEN_STEP   = 2      -- depth between two layers
 local ICON_SIZE    = 55     -- image tokens
 
--- Dice, in inches.
-local DICE_OFFSET  = 0.85   -- first die's centre, to the side of the activation token
-local DICE_SPACING = 0.9    -- distance between dice in the row
+local MIN_HEIGHT   = 0.8    -- inches: markers float at least this high above the base's bottom
+
+-- Markers around the activation token: dice on a half circle above it, image tokens on one
+-- below it (as the player sees the model when spawned).
+local ARC_STEP     = 40     -- degrees between neighbours on a half circle
+local DICE_RADIUS  = 1.25   -- inches from the token's centre to a die's centre (fits 1" dice)
+local DICE_SPACING = 0.95   -- inches: dice centres at least this far apart
+local TOKEN_RADIUS = 0.85   -- inches from the token's centre to an image token's centre
 local FOLLOW_MIN   = 30     -- frames dice follow at least after a move starts
 
 local RANGE_STEPS  = 64     -- points per range ring
@@ -83,18 +88,36 @@ function destabilize()
 end
 
 -- ============ GEOMETRY ============
+-- Top of the whole model. The tagged object is usually just the base with the sculpt attached;
+-- attached parts have no collider, so getBounds and raycasts only see the base. The visual
+-- bounds include them (and not the object's own UI panel; both tested in TTS).
 local function modelTop()
     local b = self.getBounds()
-    -- Bounds may not include the attached sculpt (the tagged object is often just the base).
-    local h = math.max(b.size.y, 1.8)
+    local h = math.max(self.getVisualBoundsNormalized().size.y, MIN_HEIGHT)
     return b.center.y - b.size.y / 2 + h
 end
 
--- World position GAP above the model, `side` inches to its side, turned with the model.
-local function besideTop(side, extraHeight)
-    local offset = Vector(side, 0, 0):rotateOver("y", self.getRotation().y)
-    local p = self.getPosition()
-    return Vector(p.x + offset.x, modelTop() + GAP / 100 + (extraHeight or 0), p.z + offset.z)
+-- Point k of n on a half circle around the activation token, in panel inches (x to the side,
+-- y = side * up the panel: 1 = "above" the token, away from the player as spawned, -1 =
+-- below). Neighbours are ARC_STEP degrees apart, centred; when n wouldn't fit on half a
+-- circle, they spread over 180 degrees and the radius grows so they don't overlap.
+local function arcPoint(k, n, radius, spacing, side)
+    local step = math.rad(ARC_STEP)
+    if n > 1 and (n - 1) * step > math.pi then
+        step = math.pi / (n - 1)
+        radius = math.max(radius, spacing / (2 * math.sin(step / 2)))
+    end
+    local a = math.pi / 2 + ((n + 1) / 2 - k) * step
+    return radius * math.cos(a), side * radius * math.sin(a)
+end
+
+-- World position of panel point (x, y) inches, at the panel's height plus extraHeight, turned
+-- with the model. The panel is rotated "0 0 180", so panel x / y are the model's local -x / -z.
+local function panelToWorld(x, y, extraHeight)
+    local s = self.getScale()
+    local pos = self.positionToWorld(Vector(-x / s.x, 0, -y / s.z))
+    pos.y = modelTop() + GAP / 100 + (extraHeight or 0)
+    return pos
 end
 
 local function onPlatform()
@@ -146,10 +169,11 @@ local function tokenXml()
     return table.concat(out)
 end
 
--- Activation token in the middle, image tokens to the side away from the dice. The root panel
--- undoes the model's scale, so sizes are the same on every model. Buttons use indices as ids,
--- so token names with special characters can't break the XML; no tooltips (TTS draws
--- object-UI tooltips on the ground and can leave them stuck).
+-- Activation token in the middle, image tokens on a half circle below it (dice are on one
+-- above it, see diePosition). The root panel undoes the model's scale, so sizes are the same
+-- on every model. Buttons use indices as ids, so token names with special characters can't
+-- break the XML; no tooltips (TTS draws object-UI tooltips on the ground and can leave them
+-- stuck).
 local function renderPanel()
     local assets, parts = {}, {}
     local icon = ICONS[state.f] or ICONS.default
@@ -157,13 +181,16 @@ local function renderPanel()
         assets[#assets + 1] = {name = "act", url = icon}
         parts[#parts + 1] = tokenXml()
     end
+    local shown = {}
     for i, t in ipairs(state.tokens) do
-        if t.url and t.url ~= "" then
-            assets[#assets + 1] = {name = "tok" .. i, url = t.url}
-            parts[#parts + 1] = el("Button", (TOKEN_SIZE / 2 + 20 + (i - 0.5) * (ICON_SIZE + 8)), 0, 0, ICON_SIZE,
-                'id="tok:' .. i .. '" onClick="ui_removeToken" colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"',
-                '<Image image="tok' .. i .. '" preserveAspect="true"/>')
-        end
+        if t.url and t.url ~= "" then shown[#shown + 1] = i end
+    end
+    for k, i in ipairs(shown) do
+        assets[#assets + 1] = {name = "tok" .. i, url = state.tokens[i].url}
+        local x, y = arcPoint(k, #shown, TOKEN_RADIUS, (ICON_SIZE + 8) / 100, -1)
+        parts[#parts + 1] = el("Button", x * 100, y * 100, 0, ICON_SIZE,
+            'id="tok:' .. i .. '" onClick="ui_removeToken" colors="#FFFFFF00|#FFFFFF33|#FFFFFF55|#FFFFFF00"',
+            '<Image image="tok' .. i .. '" preserveAspect="true"/>')
     end
     if #parts == 0 then
         self.UI.setXml("")
@@ -239,25 +266,25 @@ local function findDie(guid)
     return nil
 end
 
--- Die i in a row beside the activation token, its bottom at marker height. The panel is
--- rotated 180 degrees, so its image tokens (panel +x) end up on the model's -x side; the dice
--- go to +x.
+-- Die i on the half circle above the activation token, its bottom at marker height.
 local function diePosition(i, die)
-    return besideTop(DICE_OFFSET + (i - 1) * DICE_SPACING, die.getBoundsNormalized().size.y / 2)
+    local x, y = arcPoint(i, #state.dice, DICE_RADIUS, DICE_SPACING, 1)
+    return panelToWorld(x, y, die.getBoundsNormalized().size.y / 2)
 end
 
 -- Puts every linked die in its place (instantly: they're locked, so no physics is involved)
 -- and forgets dice that no longer exist.
 function placeDice()
-    local live = {}
+    local live, objs = {}, {}
     for _, g in ipairs(state.dice) do
         local o = getObjectFromGUID(g)
         if o then
             live[#live + 1] = g
-            o.setPosition(diePosition(#live, o))
+            objs[#objs + 1] = o
         end
     end
-    state.dice = live
+    state.dice = live   -- before placing: the half circle is laid out for the dice that exist
+    for i, o in ipairs(objs) do o.setPosition(diePosition(i, o)) end
 end
 
 -- While the model is held, falling or moved by "Load position", its dice are placed above
