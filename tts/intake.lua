@@ -2,7 +2,8 @@
 -- TC MINIATURES - INTAKE STATION (dev save only)
 -- =============================================
 -- Sorting board for the maintainer. Choose a faction and press Open board: the station lays
--- out a grid to its left, one column per unit (plus the mercenaries the faction can hire) and
+-- out a grid to its right, one column per unit (leader first, then the mercenaries the faction
+-- can hire) and
 -- two rows per context (Vanilla, then each subfaction; each with General and Import), and takes
 -- every catalogued model of that faction out of its storage bag into its cell. Add new models
 -- by dropping them into a cell, retag by moving them, destroy them via the Discard strip.
@@ -38,10 +39,12 @@ local MERC = "mercenaries"
 
 -- Board layout, in world units relative to the station (its position and rotation when the
 -- board was opened, not its scale). x runs to the right of a player standing on the station's
--- local -z side (where the panel reads upright), z away from them. The board lies left of
--- the station; rows start level with its front edge and grow away from the player.
-local BOARD_GAP   = 3      -- between the station and the board's right edge
-local ROW_LABEL_W = 8      -- column of row labels on the board's left
+-- local +z side (where a panel with rotation "0 0 180" reads upright, tested on the spawner),
+-- z away from them. The board lies right of the station (the bags are on its left), so the
+-- columns read left to right from the faction's leader to its mercenaries; rows start level
+-- with the station's front edge and grow away from the player.
+local BOARD_GAP   = 3      -- between the station and the board's left edge
+local ROW_LABEL_W = 8      -- column of row labels on the board's left (next to the station)
 local HEADER_D    = 2.5    -- row of column labels nearest to the player
 local CELL_GAP    = 0.5    -- between cells
 local CELL_PAD    = 0.3    -- around and between models in a cell
@@ -53,11 +56,12 @@ local DISCARD_D   = 5      -- Discard strip beyond the last row
 local TILE_THICKNESS = 0.1
 local DEFAULT_SIZE   = 1.5 -- footprint of a model whose tag has no w/d
 
--- TO TUNE in TTS: yaw of models on the board (relative to the station) so they face the
--- player, and of the flat 3D text labels so they read upright from the player's side.
-local MODEL_YAW   = 180
+-- Yaw of models on the board (relative to the station) so they face the player, and of the
+-- flat 3D text labels so they read upright from the player's side. Same values as the
+-- spawner, whose reader also stands on the +z side; change if they come out turned.
+local MODEL_YAW   = 0
 local LABEL_PITCH = 90
-local LABEL_YAW   = 0
+local LABEL_YAW   = 180
 local LABEL_FONT  = 32
 
 local COLOR_GENERAL = {0.18, 0.18, 0.18}
@@ -65,7 +69,7 @@ local COLOR_IMPORT  = {0.12, 0.22, 0.15}
 local COLOR_DISCARD = {0.4, 0.08, 0.08}
 local COLOR_HEADER  = {0.08, 0.08, 0.08}
 
-local BAG_OFFSET   = {x = 12, z = 0}   -- first storage bag (right of the station)
+local BAG_OFFSET   = {x = 12, z = 0}   -- first storage bag (local +x: the player's left)
 local BAG_SPACING  = 2.5
 local BAGS_PER_ROW = 10
 
@@ -150,12 +154,15 @@ local function tableY()
 end
 
 -- Board frame <-> world. The frame is stored when the board opens, so moving the station
--- afterwards doesn't shift the cells. Unity yaw turns local +z toward world +x.
+-- afterwards doesn't shift the cells. The player faces the station's local -z, so board x
+-- (their right) is local -x and board z (away) is local -z. Unity yaw turns local +z toward
+-- world +x.
 local function frameToWorld(x, z, y)
     local fr = board.frame
     local a = math.rad(fr.yaw)
     local c, s = math.cos(a), math.sin(a)
-    return Vector(fr.x + x * c + z * s, y or fr.y, fr.z - x * s + z * c)
+    local lx, lz = -x, -z
+    return Vector(fr.x + lx * c + lz * s, y or fr.y, fr.z - lx * s + lz * c)
 end
 
 local function worldToFrame(p)
@@ -163,7 +170,7 @@ local function worldToFrame(p)
     local a = math.rad(fr.yaw)
     local c, s = math.cos(a), math.sin(a)
     local dx, dz = p.x - fr.x, p.z - fr.z
-    return dx * c - dz * s, dx * s + dz * c
+    return -(dx * c - dz * s), -(dx * s + dz * c)
 end
 
 local function clearHighlights()
@@ -198,13 +205,14 @@ local function parseBagMarker(notes)
     return nil
 end
 
--- s holds subfaction ids of any faction (a mercenary can be made for Knights of Avarice);
--- i also allows "_" and faction ids (see the header).
+-- s holds subfaction ids of any faction (a mercenary can be made for Knights of Avarice),
+-- plus "_" (vanilla) in tags pulled from the catalog, where a model can be vanilla and themed
+-- at once; i also allows "_" and faction ids (see the header).
 local function tagValid(t)
     local fe = config and factionIndex[t.f]
     if not fe or not fe.units[t.u] then return false end
     for _, sid in ipairs(list(t.s)) do
-        if not subOwner[sid] then return false end
+        if sid ~= "_" and not subOwner[sid] then return false end
     end
     for _, x in ipairs(list(t.i)) do
         if x ~= "_" and not subOwner[x] and not factionIndex[x] then return false end
@@ -238,10 +246,11 @@ local function membershipTag(f, u, m, w, d)
 end
 
 -- Identity of a model for the duplicate check, like dedupe_key in tools/export.py: the
--- object's own asset URLs and scale plus all attached parts.
+-- object's own asset URLs and scale plus all attached parts. Scale to 2 decimals: the catalog
+-- rounds transforms, and Pull from catalog compares catalog models with the bags' ones.
 local function partKey(d)
     local t = d.Transform or {}
-    local sc = string.format("%.3f,%.3f,%.3f", t.scaleX or 1, t.scaleY or 1, t.scaleZ or 1)
+    local sc = string.format("%.2f,%.2f,%.2f", t.scaleX or 1, t.scaleY or 1, t.scaleZ or 1)
     if d.CustomMesh then
         return "m|" .. tostring(d.CustomMesh.MeshURL) .. "|" .. tostring(d.CustomMesh.DiffuseURL) .. "|" .. sc
     elseif d.CustomAssetbundle then
@@ -306,7 +315,9 @@ local function buildXml()
             opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
         end
         row(40, '<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">' .. table.concat(opts) .. '</Dropdown>')
-        row(44, '<Button preferredHeight="44" onClick="ui_open"' .. green .. '>Open board</Button>')
+        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
+            .. '<Button onClick="ui_open"' .. green .. '>Open board</Button>'
+            .. '<Button onClick="ui_pull">Pull from catalog</Button></HorizontalLayout>')
     end
 
     row(36, '<HorizontalLayout preferredHeight="36" spacing="6">'
@@ -695,7 +706,7 @@ local function openBoard()
     end
     local s = self.getBounds().size
     local half = math.max(s.x, s.z) / 2
-    local left = -(half + BOARD_GAP + totalW)
+    local left = half + BOARD_GAP
     local x = left + ROW_LABEL_W
     for _, col in ipairs(board.cols) do
         col.x0 = x + CELL_GAP
@@ -927,6 +938,101 @@ local function closeBoard()
     nextBag()
 end
 
+-- ============ PULL FROM CATALOG ============
+-- Brings the bags up to date with the published catalog: every catalog model of the chosen
+-- faction's board columns (its units, hired mercenaries, Golem) that no bag holds yet is
+-- spawned with a tag rebuilt from its catalog entry (s may contain "_" = vanilla too; the
+-- board splits such tags into one copy per cell when it opens) and put into its unit bag.
+-- Only adds, never removes or retags: models in the bags win, so new models that aren't
+-- exported yet are safe. A model discarded here but not yet exported comes back, so export
+-- before pulling. Manual (a button), not on load, for the same reason.
+local function fetchJson(url, callback)
+    WebRequest.get(url, function(req)
+        if req.is_error or (req.response_code and req.response_code >= 400) then
+            callback(nil, tostring(req.error or req.response_code))
+            return
+        end
+        local ok, data = pcall(JSON.decode, req.text)
+        if not ok or type(data) ~= "table" then callback(nil, "bad JSON") return end
+        callback(data)
+    end)
+end
+
+local function pullCatalog()
+    if busy or board or not config then return end
+    local fe = factionIndex[sel.f]
+    if not fe then return end
+    local cols = boardSkeleton(fe).cols
+    busy = true
+    setStatus("Pulling " .. fe.faction.name .. " from the catalog...")
+    local function fail(what, err)
+        busy = false
+        setStatus("Pull from catalog failed: " .. what .. " (" .. tostring(err) .. ").")
+    end
+
+    fetchJson(RAW_BASE .. "catalog/version.json?v=" .. os.time(), function(v, err)
+        if not v then fail("version.json", err) return end
+        local version = tostring(v.catalog)
+        fetchJson(RAW_BASE .. "catalog/index.json?v=" .. version, function(index, err2)
+            if not index then fail("index.json", err2) return end
+            local files = {}   -- "f/u" -> unit file
+            for _, f in ipairs(index.factions or {}) do
+                for _, u in ipairs(f.units or {}) do files[f.id .. "/" .. u.id] = u.file end
+            end
+            local added, present, bagsTouched, i = 0, 0, 0, 0
+            local function nextCol()
+                i = i + 1
+                local col = cols[i]
+                if not col then
+                    flushQueue(function()
+                        busy = false
+                        setStatus("Pulled " .. added .. " model(s) from catalog " .. version .. " into " .. bagsTouched
+                            .. " bag(s); " .. present .. " were already in the bags.")
+                    end)
+                    return
+                end
+                local file = files[col.f .. "/" .. col.u]
+                if not file then nextCol() return end
+                fetchJson(RAW_BASE .. "catalog/" .. file .. "?v=" .. version, function(entries, err3)
+                    if not entries then fail(file, err3) return end
+                    -- Models this unit's bag already holds.
+                    local have = {}
+                    local bag = findBag(col.f, col.u)
+                    if bag then
+                        for _, d in ipairs(bag.getData().ContainedObjects or {}) do have[modelKey(d)] = true end
+                    end
+                    local missing = {}
+                    for _, e in ipairs(entries) do
+                        if type(e.data) == "table" and have[modelKey(e.data)] then
+                            present = present + 1
+                        elseif type(e.data) == "table" then
+                            missing[#missing + 1] = e
+                        end
+                    end
+                    if #missing == 0 then nextCol() return end
+                    ensureBag(col.f, col.u, function(target)
+                        bagsTouched = bagsTouched + 1
+                        local bp = target.getPosition()
+                        for _, e in ipairs(missing) do
+                            queue[#queue + 1] = function()
+                                local tag = {tc = 1, f = col.f, u = col.u, s = list(e.s), w = e.w, d = e.d}
+                                if e.i and #list(e.i) > 0 then tag.i = list(e.i) end
+                                e.data.GMNotes = JSON.encode(tag)
+                                spawnObjectData({data = e.data, position = {bp.x, bp.y + 4, bp.z},
+                                    callback_function = function(o) if target ~= nil then target.putObject(o) end end})
+                                added = added + 1
+                            end
+                        end
+                        flushQueue(nil)
+                        nextCol()
+                    end)
+                end)
+            end
+            nextCol()
+        end)
+    end)
+end
+
 -- ============ UNSORTED CHECK ============
 -- Loose models (off the board) without a valid tag, and bag contents whose tag is missing,
 -- invalid or for a different unit than the bag.
@@ -986,6 +1092,7 @@ function ui_faction(player, value)
 end
 
 function ui_open() openBoard() end
+function ui_pull() pullCatalog() end
 function ui_close() closeBoard() end
 function ui_unsorted() checkUnsorted() end
 function ui_reload() if not board then loadConfig() end end

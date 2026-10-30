@@ -1,5 +1,5 @@
 {
- "version": 10,
+ "version": 11,
  "factions": [
   {
    "id": "new-antioch",
@@ -44,12 +44,12 @@
     {
      "id": "lieutenant",
      "name": "Lieutenant",
-     "count": 34,
+     "count": 35,
      "any": 14,
      "subs": {
       "eire-rangers": 2,
       "expeditionary-forces-of-abyssinia": 2,
-      "kingdom-of-alba-assault-detatchment": 3,
+      "kingdom-of-alba-assault-detatchment": 4,
       "papal-states-intervention-force": 3,
       "stosstruppen-of-the-free-state-of-prussia": 5,
       "the-red-brigade": 6
@@ -59,11 +59,11 @@
     {
      "id": "sniper-priest",
      "name": "Sniper Priest",
-     "count": 15,
+     "count": 16,
      "any": 8,
      "subs": {
       "eire-rangers": 1,
-      "kingdom-of-alba-assault-detatchment": 1,
+      "kingdom-of-alba-assault-detatchment": 2,
       "stosstruppen-of-the-free-state-of-prussia": 3,
       "the-red-brigade": 2
      },
@@ -72,13 +72,13 @@
     {
      "id": "trench-cleric",
      "name": "Trench Cleric",
-     "count": 19,
-     "any": 8,
+     "count": 20,
+     "any": 7,
      "subs": {
       "eire-rangers": 1,
       "expeditionary-forces-of-abyssinia": 1,
-      "kingdom-of-alba-assault-detatchment": 1,
-      "papal-states-intervention-force": 2,
+      "kingdom-of-alba-assault-detatchment": 2,
+      "papal-states-intervention-force": 3,
       "stosstruppen-of-the-free-state-of-prussia": 4,
       "the-red-brigade": 2
      },
@@ -87,11 +87,11 @@
     {
      "id": "combat-engineer",
      "name": "Combat Engineer",
-     "count": 9,
+     "count": 10,
      "any": 4,
      "subs": {
       "eire-rangers": 1,
-      "kingdom-of-alba-assault-detatchment": 1,
+      "kingdom-of-alba-assault-detatchment": 2,
       "stosstruppen-of-the-free-state-of-prussia": 1,
       "the-red-brigade": 2
      },
@@ -100,9 +100,10 @@
     {
      "id": "combat-medic",
      "name": "Combat Medic",
-     "count": 3,
+     "count": 4,
      "any": 1,
      "subs": {
+      "kingdom-of-alba-assault-detatchment": 1,
       "the-red-brigade": 2
      },
      "file": "units/new-antioch/combat-medic.json"
@@ -110,11 +111,11 @@
     {
      "id": "mechanized-heavy-infantry",
      "name": "Mechanized Heavy Infantry",
-     "count": 29,
-     "any": 14,
+     "count": 31,
+     "any": 15,
      "subs": {
       "eire-rangers": 1,
-      "kingdom-of-alba-assault-detatchment": 3,
+      "kingdom-of-alba-assault-detatchment": 4,
       "papal-states-intervention-force": 3,
       "stosstruppen-of-the-free-state-of-prussia": 4,
       "the-red-brigade": 4
@@ -128,11 +129,11 @@
      "id": "shocktrooper",
      "name": "Shocktrooper",
      "count": 33,
-     "any": 11,
+     "any": 10,
      "subs": {
       "eire-rangers": 2,
       "expeditionary-forces-of-abyssinia": 1,
-      "kingdom-of-alba-assault-detatchment": 5,
+      "kingdom-of-alba-assault-detatchment": 6,
       "papal-states-intervention-force": 3,
       "stosstruppen-of-the-free-state-of-prussia": 5,
       "the-red-brigade": 6
@@ -142,12 +143,12 @@
     {
      "id": "yeoman",
      "name": "Yeoman",
-     "count": 34,
+     "count": 37,
      "any": 19,
      "subs": {
       "eire-rangers": 3,
       "expeditionary-forces-of-abyssinia": 2,
-      "kingdom-of-alba-assault-detatchment": 1,
+      "kingdom-of-alba-assault-detatchment": 4,
       "papal-states-intervention-force": 2,
       "stosstruppen-of-the-free-state-of-prussia": 3,
       "the-red-brigade": 4
@@ -217,8 +218,8 @@
     {
      "id": "communicant",
      "name": "Communicant",
-     "count": 6,
-     "any": 4,
+     "count": 7,
+     "any": 5,
      "subs": {
       "procession-of-the-sacred-affliction": 2
      },
@@ -250,8 +251,8 @@
     {
      "id": "stigmatic-nun",
      "name": "Stigmatic Nun",
-     "count": 21,
-     "any": 15,
+     "count": 22,
+     "any": 16,
      "subs": {
       "procession-of-the-sacred-affliction": 5,
       "war-pilgrimage-of-saint-methodius": 2
@@ -261,8 +262,8 @@
     {
      "id": "trench-pilgrim",
      "name": "Trench Pilgrim",
-     "count": 17,
-     "any": 11,
+     "count": 22,
+     "any": 16,
      "subs": {
       "procession-of-the-sacred-affliction": 4,
       "war-pilgrimage-of-saint-methodius": 2
@@ -372,8 +373,8 @@
     {
      "id": "takwin-homunculus",
      "name": "Takwin Homunculus",
-     "count": 5,
-     "any": 5,
+     "count": 10,
+     "any": 10,
      "subs": {},
      "file": "units/iron-sultanate/takwin-homunculus.json",
      "companion": [
@@ -418,9 +419,10 @@
     {
      "id": "heretic-priest",
      "name": "Heretic Priest",
-     "count": 7,
+     "count": 9,
      "any": 3,
      "subs": {
+      "heretic-naval-raiders": 2,
       "knights-of-avarice": 2,
       "trench-ghosts": 2
      },
@@ -429,9 +431,11 @@
     {
      "id": "death-commando",
      "name": "Death Commando",
-     "count": 2,
+     "count": 4,
      "any": 2,
-     "subs": {},
+     "subs": {
+      "heretic-naval-raiders": 2
+     },
      "file": "units/heretic-legion/death-commando.json",
      "companion": [
       "hereticdeathcommando"
@@ -440,9 +444,10 @@
     {
      "id": "heretic-chorister",
      "name": "Heretic Chorister",
-     "count": 5,
+     "count": 8,
      "any": 1,
      "subs": {
+      "heretic-naval-raiders": 3,
       "knights-of-avarice": 2,
       "trench-ghosts": 2
      },
@@ -455,9 +460,10 @@
     {
      "id": "anointed-heavy-infantry",
      "name": "Anointed Heavy Infantry",
-     "count": 9,
-     "any": 4,
+     "count": 14,
+     "any": 5,
      "subs": {
+      "heretic-naval-raiders": 4,
       "knights-of-avarice": 2,
       "trench-ghosts": 3
      },
@@ -469,9 +475,10 @@
     {
      "id": "artillery-witch",
      "name": "Artillery Witch",
-     "count": 7,
-     "any": 5,
+     "count": 10,
+     "any": 6,
      "subs": {
+      "heretic-naval-raiders": 2,
       "knights-of-avarice": 2
      },
      "file": "units/heretic-legion/artillery-witch.json"
@@ -479,9 +486,10 @@
     {
      "id": "heretic-trooper",
      "name": "Heretic Trooper",
-     "count": 26,
+     "count": 34,
      "any": 21,
      "subs": {
+      "heretic-naval-raiders": 8,
       "knights-of-avarice": 2,
       "trench-ghosts": 3
      },
@@ -500,9 +508,10 @@
     {
      "id": "wretched",
      "name": "Wretched",
-     "count": 6,
+     "count": 10,
      "any": 4,
      "subs": {
+      "heretic-naval-raiders": 4,
       "knights-of-avarice": 2
      },
      "file": "units/heretic-legion/wretched.json"
@@ -531,25 +540,32 @@
     {
      "id": "lord-of-tumors",
      "name": "Lord of Tumors",
-     "count": 7,
-     "any": 7,
-     "subs": {},
+     "count": 8,
+     "any": 6,
+     "subs": {
+      "the-great-hunger": 2
+     },
      "file": "units/cult-of-the-black-grail/lord-of-tumors.json"
     },
     {
      "id": "plague-knight",
      "name": "Plague Knight",
-     "count": 5,
+     "count": 9,
      "any": 5,
-     "subs": {},
+     "subs": {
+      "dirge-of-the-great-hegemon": 5,
+      "the-great-hunger": 3
+     },
      "file": "units/cult-of-the-black-grail/plague-knight.json"
     },
     {
      "id": "corpse-guard",
      "name": "Corpse Guard",
-     "count": 9,
+     "count": 10,
      "any": 9,
-     "subs": {},
+     "subs": {
+      "the-great-hunger": 1
+     },
      "file": "units/cult-of-the-black-grail/corpse-guard.json"
     },
     {
@@ -563,18 +579,19 @@
     {
      "id": "grail-thrall",
      "name": "Grail Thrall",
-     "count": 15,
+     "count": 20,
      "any": 13,
      "subs": {
-      "dirge-of-the-great-hegemon": 2
+      "dirge-of-the-great-hegemon": 4,
+      "the-great-hunger": 5
      },
      "file": "units/cult-of-the-black-grail/grail-thrall.json"
     },
     {
      "id": "fly-thrall",
      "name": "Fly Thrall",
-     "count": 4,
-     "any": 4,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/cult-of-the-black-grail/fly-thrall.json"
     },
@@ -589,25 +606,31 @@
     {
      "id": "hounds-of-the-black-grail",
      "name": "Hounds of the Black Grail",
-     "count": 6,
-     "any": 6,
-     "subs": {},
+     "count": 9,
+     "any": 7,
+     "subs": {
+      "the-great-hunger": 3
+     },
      "file": "units/cult-of-the-black-grail/hounds-of-the-black-grail.json"
     },
     {
      "id": "matagot-hag",
      "name": "Matagot Hag",
-     "count": 1,
-     "any": 1,
-     "subs": {},
+     "count": 3,
+     "any": 2,
+     "subs": {
+      "the-great-hunger": 1
+     },
      "file": "units/cult-of-the-black-grail/matagot-hag.json"
     },
     {
      "id": "gregori-gula",
      "name": "Gregori Gula",
      "count": 5,
-     "any": 5,
-     "subs": {},
+     "any": 0,
+     "subs": {
+      "the-great-hunger": 5
+     },
      "file": "units/cult-of-the-black-grail/gregori-gula.json",
      "companion": [
       "gergorigula"
@@ -658,51 +681,94 @@
     {
      "id": "praetor",
      "name": "Praetor",
-     "count": 2,
+     "count": 10,
      "any": 2,
-     "subs": {},
+     "subs": {
+      "gluttony": 1,
+      "greed": 1,
+      "lust": 2,
+      "pride": 2,
+      "sloth": 1,
+      "wrath": 1
+     },
      "file": "units/court-of-the-seven-headed-serpent/praetor.json"
     },
     {
      "id": "sorcerer",
      "name": "Sorcerer",
-     "count": 4,
+     "count": 12,
      "any": 4,
-     "subs": {},
+     "subs": {
+      "gluttony": 1,
+      "greed": 1,
+      "lust": 2,
+      "pride": 2,
+      "sloth": 1,
+      "wrath": 1
+     },
      "file": "units/court-of-the-seven-headed-serpent/sorcerer.json"
     },
     {
      "id": "hell-knight",
      "name": "Hell Knight",
-     "count": 9,
+     "count": 30,
      "any": 8,
      "subs": {
-      "greed": 1
+      "envy": 5,
+      "gluttony": 5,
+      "greed": 3,
+      "lust": 3,
+      "pride": 3,
+      "sloth": 1,
+      "wrath": 2
      },
      "file": "units/court-of-the-seven-headed-serpent/hell-knight.json"
     },
     {
      "id": "hunter-of-the-left-hand-path",
      "name": "Hunter of the Left-Hand Path",
-     "count": 2,
+     "count": 8,
      "any": 2,
-     "subs": {},
+     "subs": {
+      "envy": 1,
+      "gluttony": 1,
+      "greed": 1,
+      "pride": 1,
+      "sloth": 1,
+      "wrath": 1
+     },
      "file": "units/court-of-the-seven-headed-serpent/hunter-of-the-left-hand-path.json"
     },
     {
      "id": "desecrated-saint",
      "name": "Desecrated Saint",
-     "count": 2,
+     "count": 10,
      "any": 2,
-     "subs": {},
+     "subs": {
+      "envy": 2,
+      "gluttony": 1,
+      "greed": 1,
+      "lust": 1,
+      "pride": 1,
+      "sloth": 1,
+      "wrath": 1
+     },
      "file": "units/court-of-the-seven-headed-serpent/desecrated-saint.json"
     },
     {
      "id": "pit-locust",
      "name": "Pit Locust",
-     "count": 3,
+     "count": 12,
      "any": 3,
-     "subs": {},
+     "subs": {
+      "envy": 2,
+      "gluttony": 2,
+      "greed": 1,
+      "lust": 1,
+      "pride": 1,
+      "sloth": 1,
+      "wrath": 1
+     },
      "file": "units/court-of-the-seven-headed-serpent/pit-locust.json"
     },
     {
@@ -719,9 +785,17 @@
     {
      "id": "yoke-fiend",
      "name": "Yoke Fiend",
-     "count": 7,
+     "count": 21,
      "any": 7,
-     "subs": {},
+     "subs": {
+      "envy": 2,
+      "gluttony": 4,
+      "greed": 1,
+      "lust": 2,
+      "pride": 2,
+      "sloth": 1,
+      "wrath": 2
+     },
      "file": "units/court-of-the-seven-headed-serpent/yoke-fiend.json"
     }
    ]

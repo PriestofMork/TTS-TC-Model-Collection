@@ -87,7 +87,8 @@ def validate(tag, lookup):
     if u not in entry["units"]:
         raise ValueError(f"unknown unit '{u}' in faction '{f}'")
     subs = as_list(tag.get("s"))
-    unknown = [s for s in subs if s not in entry["subs"]]
+    # "_" = vanilla next to themes, in tags the intake rebuilt from a catalog entry.
+    unknown = [s for s in subs if s != "_" and s not in entry["subs"]]
     if unknown:
         raise ValueError(f"unknown subfaction(s) {unknown} for faction '{f}'")
     imp = as_list(tag.get("i"))
@@ -119,8 +120,8 @@ def merge_copies(copies, lookup):
     themes, vanilla, imports = set(), False, set()
     general = [c for c in copies if not c[2]]
     for subs, imp, _ in general:
-        themes |= set(subs)
-        vanilla |= not subs
+        themes |= set(subs) - {"_"}
+        vanilla |= not subs or "_" in subs
         imports |= set(imp)
     for subs, imp, _ in copies:
         imports |= set(imp)
