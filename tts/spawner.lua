@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 12
+local SPAWNER_VERSION = 13
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -1030,46 +1030,6 @@ local function clearSpawned(key, done)
 end
 
 -- ============ CATALOG LOADING ============
--- Models keep the script they were spawned with. Once the hub has the published model script,
--- it puts it into every model on the table running an older version (TCM_MODEL_VERSION, a
--- global in model.lua; scripts before it count as 0), a few per frame. reload() keeps the
--- model's script_state, so activation, tokens, dice and positions stay. Held models are
--- skipped (the reload would drop them out of the player's hand).
-local UPGRADE_BATCH = 5
-
-local function upgradeModels()
-    local i = string.find(modelScript or "", "TCM_MODEL_VERSION = ", 1, true)
-    local latest = i and tonumber(string.match(string.sub(modelScript, i + 20, i + 26), "^%d+"))
-    if not latest then return end
-    local old = {}
-    for _, o in ipairs(getAllObjects()) do
-        if o.hasTag(MODEL_TAG) and o.held_by_color == nil and (tonumber(o.getVar("TCM_MODEL_VERSION")) or 0) < latest then
-            old[#old + 1] = o
-        end
-    end
-    if #old == 0 then return end
-    local k = 0
-    local function step()
-        for _ = 1, UPGRADE_BATCH do
-            k = k + 1
-            local o = old[k]
-            if k > #old then
-                setStatus(status .. " Updated the script of " .. #old .. " model(s) on the table.")
-                return
-            end
-            if o ~= nil then   -- destroyed objects compare equal to nil
-                local ok, err = pcall(function()
-                    o.setLuaScript(modelScript)
-                    o.reload()
-                end)
-                if not ok then print("[TC Spawner] model upgrade: " .. tostring(err)) end
-            end
-        end
-        Wait.frames(step, 1)
-    end
-    step()
-end
-
 local function applyIndex(text)
     local ok, data = pcall(JSON.decode, text)
     if not ok or type(data) ~= "table" or type(data.factions) ~= "table" or #data.factions == 0 then
@@ -1091,7 +1051,6 @@ local function applyIndex(text)
             return
         end
         modelScript = req.text
-        upgradeModels()
     end)
 end
 

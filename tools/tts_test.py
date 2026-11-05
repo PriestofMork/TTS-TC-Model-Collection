@@ -123,8 +123,6 @@ def run():
     check("load: tags TCM_Model and TCUIOperative", tags == [True, True], tags)
     check("load: state version 2", sa.get("v") == 2, sa.get("v"))
     check("load: geometry measured at rest", sa.get("geo") is not None)
-    version = lua(f"return getObjectFromGUID('{a}').getVar('TCM_MODEL_VERSION')")
-    check("load: TCM_MODEL_VERSION readable", isinstance(version, (int, float)) and version >= 2, version)
 
     # --- activation icons: per-faction asset names ------------------------------------
     for g, f in ((a, "new-antioch"), (b, "trench-pilgrims")):

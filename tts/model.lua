@@ -35,9 +35,6 @@
 -- Ideas and faction icons from the legacy UI extender; stabilisation from Pyromaniacal's
 -- Stabilized Bases (MIT).
 
--- Global (not local) so the spawner can read it with getVar and upgrade older models.
--- Bump it with every change to this script.
-TCM_MODEL_VERSION = 2
 local STATE_VERSION = 2
 
 local MODEL_TAG     = "TCM_Model"
@@ -768,42 +765,51 @@ end
 
 -- ============ LOAD ============
 -- After everything has loaded: make the id unique (a copied model has its original's id),
--- find this model's dice by their id, relink dice of older script versions, then update.
+-- check this model's dice, relink dice of older script versions, then update. The table is
+-- only scanned when there is something to find, so a normal load scans nothing.
 local function settle()
     if self == nil then return end
-    local all = getAllObjects()
-    for _, o in ipairs(all) do
-        if o ~= self and o.hasTag(MODEL_TAG) then
-            local st = o.getTable("state")
-            if type(st) == "table" and st.id == state.id then
-                -- Two models share an id: the copy takes a new one. The original is the one
-                -- with the GUID the id was made under; if neither has it, the larger GUID yields.
-                local otherIsOriginal = o.getGUID() == state.idGuid
-                local iAmOriginal = self.getGUID() == state.idGuid
-                if otherIsOriginal or (not iAmOriginal and self.getGUID() > o.getGUID()) then
-                    state.id, state.dice = newId(), {}
+    -- A GUID other than the one the id was made under: this is a copy, or TTS changed the
+    -- GUID (collision on load). Only then can another model have the same id.
+    if state.idGuid ~= self.getGUID() then
+        for _, o in ipairs(getAllObjects()) do
+            if o ~= self and o.hasTag(MODEL_TAG) then
+                local st = o.getTable("state")
+                if type(st) == "table" and st.id == state.id then
+                    -- The original is the one with the GUID the id was made under; if neither
+                    -- has it, the larger GUID yields.
+                    if o.getGUID() == state.idGuid or self.getGUID() > o.getGUID() then
+                        state.id, state.dice = newId(), {}
+                    end
+                    break
                 end
-                break
             end
         end
+        state.idGuid = self.getGUID()
     end
-    state.idGuid = self.getGUID()
 
-    local old, found = state.dice, {}
-    for _, o in ipairs(all) do
-        if o.hasTag(DIE_TAG) and o.memo == state.id then found[#found + 1] = o.getGUID() end
-    end
-    -- Keep the saved order where GUIDs still match, then add the rest.
-    local dice, seen = {}, {}
-    for _, g in ipairs(old) do
-        for _, f in ipairs(found) do
-            if f == g and not seen[g] then dice[#dice + 1], seen[g] = g, true end
+    -- Saved dice that still exist under their GUID keep their place. Only if one is missing
+    -- (TTS changed its GUID) are the dice found by their tag and this model's id.
+    if #state.dice > 0 then
+        local dice, seen, missing = {}, {}, false
+        for _, g in ipairs(state.dice) do
+            local o = getObjectFromGUID(g)
+            if o and o.memo == state.id then
+                dice[#dice + 1], seen[g] = g, true
+            else
+                missing = true
+            end
         end
+        if missing then
+            for _, o in ipairs(getAllObjects()) do
+                if o.hasTag(DIE_TAG) and o.memo == state.id and not seen[o.getGUID()] then
+                    dice[#dice + 1] = o.getGUID()
+                end
+            end
+        end
+        state.dice = dice
     end
-    for _, f in ipairs(found) do
-        if not seen[f] then dice[#dice + 1], seen[f] = f, true end
-    end
-    state.dice = dice
+    local dice = state.dice
     for _, g in ipairs(dice) do
         local o = getObjectFromGUID(g)
         if o then o.setLock(true) end
