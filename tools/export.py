@@ -7,7 +7,7 @@ Reads every object whose GM Notes hold a {"tc":1,...} tag (written by tts/intake
 including models inside bags, validates the tags against config/units.json, merges copies
 of the same model within a unit, cleans the TTS object data and writes:
 
-    catalog/units/<faction>/<unit>.json   one file per unit, one model per line
+    catalog/units/<faction>/<unit>.txt    one file per unit, one model per line (see dump_unit)
     catalog/index.json                    small menu index for the spawner
     catalog/version.json                  "catalog" is bumped only if the output changed
 """
@@ -220,9 +220,31 @@ def clean(data, unit_name, w, d):
 # ---------------------------------------------------------------- writing
 
 def dump_unit(entries):
-    """One entry per line so git diffs show added/removed models clearly."""
-    lines = [json.dumps(e, sort_keys=True, ensure_ascii=False, separators=(",", ":")) for e in entries]
-    return "[\n" + ",\n".join(lines) + "\n]\n"
+    """One model per line: its info as JSON, a tab, then its TTS object data as JSON.
+
+    The spawner decodes only the small info part and hands the object data to TTS as text
+    (spawnObjectJSON, native and fast): MoonSharp's JSON.decode of a 106 KB unit file took
+    17.6 s in TTS, with the game frozen. JSON never contains a raw tab, so the tab is a safe
+    separator. Info: s / i (themes, import picks), w / d (footprint), and moved out of the
+    data so the spawner can set its own without duplicate keys: n (Nickname), desc
+    (Description), t (Tags), rx / rz (tilt; rotY is always 0). One line per model also keeps
+    git diffs readable."""
+    lines = []
+    for e in entries:
+        data = dict(e["data"])
+        info = {k: v for k, v in e.items() if k != "data"}
+        for key, short in (("Nickname", "n"), ("Description", "desc"), ("Tags", "t")):
+            value = data.pop(key, None)
+            if value:
+                info[short] = value
+        t = data.get("Transform", {})
+        if t.get("rotX"):
+            info["rx"] = t["rotX"]
+        if t.get("rotZ"):
+            info["rz"] = t["rotZ"]
+        lines.append(json.dumps(info, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\t"
+                     + json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")))
+    return "\n".join(lines) + "\n"
 
 
 def dump_json(obj):
@@ -312,7 +334,7 @@ def main():
             if not bucket:
                 continue
             entries = [bucket[k] for k in sorted(bucket, key=lambda k: json.dumps(k))]
-            rel = f"units/{f}/{unit['id']}.json"
+            rel = f"units/{f}/{unit['id']}.txt"
             files[rel] = dump_unit(entries)
             # Spawner filters: Vanilla shows `any`, a subfaction C shows subs[C] (or `any`
             # when that is 0), All shows `count`.
@@ -353,8 +375,8 @@ def main():
     changed = old_index != {"factions": index_factions}
     for rel, text in files.items():
         changed |= read_text(CATALOG / rel) != text
-    stale = [p for p in (CATALOG / "units").rglob("*.json")
-             if p.relative_to(CATALOG).as_posix() not in files] if (CATALOG / "units").exists() else []
+    stale = [p for p in (CATALOG / "units").rglob("*")
+             if p.is_file() and p.relative_to(CATALOG).as_posix() not in files] if (CATALOG / "units").exists() else []
     changed |= bool(stale)
 
     if changed:

@@ -93,7 +93,7 @@ local PLAYER_COLORS = {
 --   id       random id of this model: its dice carry it (GUIDs change when TTS resolves
 --            collisions on load); idGuid = the GUID it was given at, to tell copies apart
 --   f, u     faction id (activation icon) and unit id (swapping), set by the spawner
---   member   warband member (imported, or put on a warband slot)
+--   member   warband member (imported)
 --   base     base size in mm (25..60), nil = not known or bigger than 60 mm
 --   geo      measured once at rest: {bottom = base bottom below the pivot, h = collider
 --            height, w = footprint width (x), d = footprint depth (z)}, world inches
@@ -405,8 +405,10 @@ end
 -- onObjectNumberTyped did not: TTS still lifted and dropped the die). The die's memo is its
 -- model's id; without one (taken off again) the die behaves normally.
 local DIE_SCRIPT = [[
--- TC Miniatures die marker v2: 1-6 turn this die to that face, 0 hands it back to its model.
--- memo = the id of the model it belongs to (kept in the model's state; GUIDs can change).
+-- 1-6 turn this die to that face, 0 hands it back to its model. memo = the id of the model it
+-- belongs to (kept in the model's state; GUIDs can change). The marker below is code, not a
+-- comment, so it survives the spawner stripping comments; linkDie looks for it.
+TCM_DIE = "TC Miniatures die marker v2"
 local model = nil
 local function findModel()
     if self.memo == "" then return nil end
@@ -637,15 +639,7 @@ function loadPosition()
     startFollowing()
 end
 
--- ============ CALLS FROM THE SPAWNER AND SLOTS ============
--- A warband slot made this model a warband member (it already set name and description).
-function becomeMember(params)
-    state.member = true
-    state.f = params.f or state.f
-    state.u = params.u or state.u
-    changed()
-end
-
+-- ============ CALLS FROM THE SPAWNER ============
 -- The spawner's Extend UI area: a model that already runs this script was dropped there, so
 -- only its faction (activation icon) changes.
 function setFaction(params)

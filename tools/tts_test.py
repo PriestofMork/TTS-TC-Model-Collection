@@ -24,7 +24,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tts.log"
-MODEL_SCRIPT = (ROOT / "tts" / "model.lua").read_text(encoding="utf-8")
+# As the spawner puts it into models: whole comment lines and blank lines removed (stripComments).
+MODEL_SCRIPT = "\n".join(
+    line for line in (ROOT / "tts" / "model.lua").read_text(encoding="utf-8").split("\n")
+    if line.strip() and not line.strip().startswith("--")) + "\n"
 TTS_PORT = 39999
 PREFIX = "TESTRESULT: "
 
@@ -163,7 +166,7 @@ return spawnObject({{type = 'Die_6', position = {{p.x, p.y + 1, p.z}}}}).getGUID
     sa = model_state(a)
     d = lua(f"""local d = getObjectFromGUID('{die}')
 return {{memo = d.memo, tag = d.hasTag('TCM_Die'), locked = d.getLock(),
-        script = string.find(d.getLuaScript(), 'die marker v2', 1, true) ~= nil}}""")
+        script = string.find(d.getLuaScript(), 'TC Miniatures die marker v2', 1, true) ~= nil}}""")
     check("dice: linked", die in sa.get("dice", []), sa.get("dice"))
     check("dice: memo is the model's id (not its GUID)", d["memo"] == sa["id"], d["memo"])
     check("dice: tagged, locked, script v2", d["tag"] and d["locked"] and d["script"], d)

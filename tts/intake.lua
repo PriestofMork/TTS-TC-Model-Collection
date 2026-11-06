@@ -958,6 +958,37 @@ local function fetchJson(url, callback)
     end)
 end
 
+-- A catalog unit file: one model per line, its info as JSON, a tab, its object data as JSON
+-- (see dump_unit in tools/export.py). Each line is decoded on its own (decoding a whole big
+-- file at once is very slow in MoonSharp), and the fields the file keeps beside the data
+-- (Nickname, Description, Tags, tilt) are put back into it. Returns {s, i, w, d, data} entries.
+local function fetchUnitFile(url, callback)
+    WebRequest.get(url, function(req)
+        if req.is_error or (req.response_code and req.response_code >= 400) then
+            callback(nil, tostring(req.error or req.response_code))
+            return
+        end
+        local text, entries, p = req.text or "", {}, 1
+        while p <= #text do
+            local nl = string.find(text, "\n", p, true) or (#text + 1)
+            local tab = string.find(text, "\t", p, true)
+            if tab and tab < nl then
+                local ok1, e = pcall(JSON.decode, string.sub(text, p, tab - 1))
+                local ok2, data = pcall(JSON.decode, string.sub(text, tab + 1, nl - 1))
+                if ok1 and ok2 and type(e) == "table" and type(data) == "table" then
+                    data.Nickname, data.Description, data.Tags = e.n, e.desc, e.t
+                    data.Transform = data.Transform or {}
+                    data.Transform.rotX, data.Transform.rotZ = e.rx or data.Transform.rotX, e.rz or data.Transform.rotZ
+                    e.data = data
+                    entries[#entries + 1] = e
+                end
+            end
+            p = nl + 1
+        end
+        callback(entries)
+    end)
+end
+
 local function pullCatalog()
     if busy or board or not config then return end
     local fe = factionIndex[sel.f]
@@ -993,7 +1024,7 @@ local function pullCatalog()
                 end
                 local file = files[col.f .. "/" .. col.u]
                 if not file then nextCol() return end
-                fetchJson(RAW_BASE .. "catalog/" .. file .. "?v=" .. version, function(entries, err3)
+                fetchUnitFile(RAW_BASE .. "catalog/" .. file .. "?v=" .. version, function(entries, err3)
                     if not entries then fail(file, err3) return end
                     -- Models this unit's bag already holds.
                     local have = {}

@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 13
+local SPAWNER_VERSION = 15
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -47,15 +47,13 @@ local PLATFORM_MARGIN    = 0.5    -- platform border around the label and rows
 local PLATFORM_COLOR     = {0.12, 0.12, 0.12}
 local SPAWN_HEIGHT       = 0.3    -- models are spawned this far above the platform and settle
 
--- Catalog models have rotY 0 (export resets it). They get the spawner's yaw plus this.
--- Change to 180 if models come out facing away from the players.
-local MODEL_YAW = 0
+-- Catalog models have rotY 0 (export resets it) and get the spawner's yaw.
 -- 3D text lying flat on the table: pitch 90. Yaw 180 reads upright for the panel's reader.
 local LABEL_PITCH = 90
 local LABEL_YAW   = 180
 local LABEL_FONT  = 36
 
-local BATCH_SIZE = 15        -- objects spawned or destroyed per frame
+local BATCH_SIZE = 8         -- objects spawned or destroyed per frame (heavy models: fewer is smoother)
 
 local UI_MARGIN = 5          -- console: extra lift above the hub's top face, in UI units
 
@@ -84,8 +82,6 @@ local COL_ALL    = "#6B5420|#80662A|#4E3D17|#6B5420"    -- "Spawn whole faction"
 local COL_ICON   = "#FFFFFF|#FFFFFF|#CCCCCC|#FFFFFF"
 local COL_DIM    = "#707070|#B0B0B0|#909090|#707070"    -- faction icons that aren't open
 
-local UI_TAG     = "TCM_UI"  -- menu tokens of v8 (spawned objects); leftovers are removed on load
-
 -- Art for the action icons (Trench Crusade art by Mike Franchina, hotlinked from ArtStation).
 local ART = {
     import   = "https://cdnb.artstation.com/p/assets/images/images/031/677/223/large/mike-franchina-procession-pilgrimage-web.jpg?1604303199",
@@ -109,14 +105,16 @@ local index        = nil     -- decoded catalog/index.json
 local factionById  = {}
 local token        = nil
 local sel          = {f = nil, sub = nil}
-local spawned      = {}      -- "faction/unit" -> true
-local blocks       = {}      -- "faction/unit" -> {x, z, w, d}: its platform in layout units
+-- "faction/unit" (or "warband/...") -> {x, z, w, d}: the platform of a unit on the table, in
+-- layout units. A unit is on the table exactly when it has a block; saved with the state.
+local blocks       = {}
 local busy         = false
 local status       = "Loading catalog..."
 local renderPending = false
 local unitCache    = {}      -- unit file -> decoded entries (for the loaded catalog version)
 local scriptsOn    = true    -- put tts/model.lua into spawned models
-local modelScript  = nil     -- tts/model.lua, fetched on load
+local modelScript  = nil     -- tts/model.lua without comments, fetched on load
+local modelScriptJson = nil  -- the same, as a JSON string (encoded once, spliced into spawn data)
 local listMode     = "units" -- what the console's list column shows: "units", "import", "settings"
 local importText   = ""      -- what was pasted; kept here, the box itself isn't re-rendered
 local extendOn     = false   -- the Extend UI area is shown (and active)
@@ -144,9 +142,9 @@ local function uiHeight()
     return -math.ceil(halfLocal * 100 + UI_MARGIN)
 end
 
+-- Height of the surface the hub lies on.
 local function tableY()
-    local b = self.getBounds()
-    return b.center.y - b.size.y / 2
+    return self.getPosition().y - hubBounds().y / 2
 end
 
 -- Spawner-relative (x, z) -> world position at world height y: x to the player's right, z away
@@ -179,6 +177,17 @@ local function platformTop()
 end
 
 local function unitKey(f, u) return f .. "/" .. u end
+
+-- Downloads a text file and calls done(text), or done(nil, reason) on any failure.
+local function fetch(url, done)
+    WebRequest.get(url, function(req)
+        if req.is_error or (req.response_code and req.response_code >= 400) or not req.text then
+            done(nil, tostring(req.error or req.response_code))
+        else
+            done(req.text)
+        end
+    end)
+end
 
 -- TTS only calls onSave when the game is saved. Writing the state right away means a script
 -- reload (e.g. pasting a new version) keeps the token and still recognises its own models.
@@ -303,8 +312,7 @@ local function importBox()
     row(40, '<InputField id="importBox" preferredHeight="40" fontSize="17" lineType="SingleLine" '
         .. 'characterLimit="0" onEndEdit="ui_importText"></InputField>')
     row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
-        .. '<Button onClick="ui_importModels" colors="' .. COL_ON .. '" fontSize="19">Spawn models</Button>'
-        .. '<Button onClick="ui_importSlots" colors="' .. COL_ROW .. '" fontSize="19">Spawn slots</Button>'
+        .. '<Button onClick="ui_importGo" colors="' .. COL_ON .. '" fontSize="19">Spawn warband</Button>'
         .. '<Button onClick="ui_importCancel" colors="' .. COL_ROW .. '" fontSize="19">Cancel</Button></HorizontalLayout>')
     return '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
         .. table.concat(x) .. '</VerticalLayout>', height
@@ -402,7 +410,7 @@ local function buildXml()
                 if count == 0 then return end
                 any = true
                 local key = unitKey(f, u.id)
-                row(cx, y - ROW_H / 2, LIST_W, ROW_H, "unit:" .. key, spawned[key] and COL_ON or COL_ROW,
+                row(cx, y - ROW_H / 2, LIST_W, ROW_H, "unit:" .. key, blocks[key] and COL_ON or COL_ROW,
                     u.name .. (merc and " (merc)" or "") .. (fallback and " (vanilla)" or ""), count)
                 y = y - ROW_H - 0.06
             end
@@ -506,44 +514,26 @@ local function spawnLabel(text, pos, memo, fontSize)
     })
 end
 
--- state: the model script's starting state ({f = faction for the activation icon, u = unit
--- id for swapping, member = true for warband members}). raw: the data brings its own script
--- (warband slots) and is spawned as is. size: rescale to {x, z} once spawned (slots are
--- plain blocks whose native size isn't known up front).
-local function spawnModel(data, pos, memo, state, raw, size)
-    local t = data.Transform or {}
-    -- The model script and its starting state go into the data, so no "extend" step is
-    -- needed. The data is cached per unit, so both are set (or cleared) on every spawn.
-    if not raw then
-        if scriptsOn and modelScript then
-            data.LuaScript = modelScript
-            data.LuaScriptState = JSON.encode(state or {})
-        else
-            data.LuaScript, data.LuaScriptState = nil, nil
-        end
+-- Spawns one catalog entry (see parseUnit): its object data stays text and is handed to TTS
+-- with spawnObjectJSON (native, fast); name, description, memo, tags (with the spawn tag) and
+-- the model script with its starting state are added to that text as extra fields. The unit
+-- file keeps them out of the data, so no field appears twice. state: {f = faction for the
+-- activation icon, u = unit id for swapping, member = true for warband members}. name / desc:
+-- replacements (warband import), else the entry's own.
+local function spawnModel(e, pos, memo, state, name, desc)
+    local tags = {}
+    for _, t in ipairs(type(e.t) == "table" and e.t or {}) do tags[#tags + 1] = t end
+    tags[#tags + 1] = SPAWN_TAG
+    local extra = {
+        ',"Nickname":', JSON.encode(name or e.n or ""), ',"Description":', JSON.encode(desc or e.desc or ""),
+        ',"Memo":', JSON.encode(memo), ',"Tags":', JSON.encode(tags),
+    }
+    if scriptsOn and modelScriptJson then
+        extra[#extra + 1] = ',"LuaScript":' .. modelScriptJson .. ',"LuaScriptState":' .. JSON.encode(JSON.encode(state or {}))
     end
-    -- Tag and memo go into the data before spawning and are set again once the object exists,
-    -- in case spawnObjectData ignores either field.
-    data.Memo = memo
-    data.Tags = data.Tags or {}
-    local hasTag = false
-    for _, tag in ipairs(data.Tags) do
-        if tag == SPAWN_TAG then hasTag = true end
-    end
-    if not hasTag then table.insert(data.Tags, SPAWN_TAG) end
-    spawnObjectData({
-        data     = data,
-        position = pos,
-        rotation = {t.rotX or 0, self.getRotation().y + MODEL_YAW, t.rotZ or 0},
-        callback_function = function(obj)
-            obj.memo = memo
-            if not obj.hasTag(SPAWN_TAG) then obj.addTag(SPAWN_TAG) end
-            if size then
-                local b, sc = obj.getBoundsNormalized().size, obj.getScale()
-                obj.setScale({sc.x * size[1] / b.x, sc.y * 0.1 / b.y, sc.z * size[2] / b.z})
-            end
-        end,
-    })
+    -- e.json is one JSON object: the fields go in before its closing brace.
+    spawnObjectJSON({json = string.sub(e.json, 1, -2) .. table.concat(extra) .. "}", position = pos,
+                     rotation = {e.rx or 0, self.getRotation().y, e.rz or 0}})
 end
 
 -- A plain locked block, spawned locked from the start so it never falls. Its native size
@@ -565,18 +555,12 @@ local function spawnPlatform(pos, width, depth, memo)
             Memo         = memo,
         },
         callback_function = function(obj)
-            obj.memo = memo
-            if not obj.hasTag(SPAWN_TAG) then obj.addTag(SPAWN_TAG) end
             local size, scale = obj.getBoundsNormalized().size, obj.getScale()
             obj.setScale({scale.x * width / size.x, scale.y * PLATFORM_THICKNESS / size.y, scale.z * depth / size.z})
         end,
     })
 end
 
--- Lays out one block on its own platform: a label, then rows of models wrapped at
--- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {data=, w=, d=, state=, raw=,
--- size=, label=} (see spawnModel; label = small text on the item); w/d come from the intake
--- because bounds aren't known before the models load.
 -- Nearest free spot for a w x d block: the smallest z, then the leftmost x, at which it overlaps
 -- no other block (bottom-left packing). Candidates are the area's edge and the edges of the
 -- blocks already there. x is the block's left edge, from 0 (the area's left edge); z its top
@@ -605,6 +589,10 @@ local function findSpot(w, d)
     return left, zs[#zs]   -- not reached: the last z is behind every block
 end
 
+-- Lays out one block on its own platform: a label, then rows of models wrapped at
+-- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {e = catalog entry, state=,
+-- name=, desc=} (see spawnModel); the footprint (e.w / e.d) comes from the intake because
+-- bounds aren't known before the models load.
 -- note: an optional small line in front of the label (warbands: how to swap models).
 local function queueBlock(key, label, items, note)
     local memo = token .. "|" .. key
@@ -627,7 +615,7 @@ local function queueBlock(key, label, items, note)
     end
 
     for _, item in ipairs(items) do
-        local w, d = item.w or 1.5, item.d or 1.5
+        local w, d = item.e.w or 1.5, item.e.d or 1.5
         if #row > 0 and x + w > MAX_ROW_WIDTH then flushRow() end
         row[#row + 1] = {item = item, x = x + w / 2}
         x = x + w + MODEL_PAD
@@ -658,14 +646,9 @@ local function queueBlock(key, label, items, note)
     for _, p in ipairs(placed) do
         local it = p.item
         local pos = layoutToWorld(cx + p.x, front - p.z, top + SPAWN_HEIGHT)
-        queue[#queue + 1] = function() spawnModel(it.data, pos, memo, it.state, it.raw, it.size) end
-        if it.label then
-            local lpos = layoutToWorld(cx + p.x, front - p.z, top + 0.35)
-            queue[#queue + 1] = function() spawnLabel(it.label, lpos, memo, 18) end
-        end
+        queue[#queue + 1] = function() spawnModel(it.e, pos, memo, it.state, it.name, it.desc) end
     end
 
-    spawned[key] = true
     saveState()
 end
 
@@ -673,24 +656,47 @@ end
 local function queueUnit(f, unit, entries)
     local items = {}
     for _, e in ipairs(entries) do
-        items[#items + 1] = {data = e.data, w = e.w, d = e.d, state = {f = sel.f or f, u = unit.id}}
+        items[#items + 1] = {e = e, state = {f = sel.f or f, u = unit.id}}
     end
     queueBlock(unitKey(f, unit.id), unit.name .. " (" .. #entries .. ")", items)
 end
 
--- Fetches a unit file (cached per catalog version) and passes the decoded entries to callback,
--- or nil on error.
+-- A unit file has one model per line: its info as JSON, a tab, its object data as JSON (see
+-- dump_unit in tools/export.py). Only the small info part is decoded; the data stays text for
+-- spawnObjectJSON. Decoding whole unit files with JSON.decode froze TTS for up to 17 s (MoonSharp
+-- gets very slow on big nested JSON); splitting into lines takes a few milliseconds.
+local function parseUnit(text)
+    local entries, p = {}, 1
+    while p <= #text do
+        local nl = string.find(text, "\n", p, true) or (#text + 1)
+        local tab = string.find(text, "\t", p, true)
+        if tab and tab < nl then
+            local ok, e = pcall(JSON.decode, string.sub(text, p, tab - 1))
+            local json = string.sub(text, tab + 1, nl - 1)
+            if string.sub(json, -1) == "\r" then json = string.sub(json, 1, -2) end
+            if ok and type(e) == "table" then
+                e.json = json
+                entries[#entries + 1] = e
+            end
+        end
+        p = nl + 1
+    end
+    return entries
+end
+
+-- Fetches a unit file (cached per catalog version) and passes its entries to callback, or nil
+-- on error.
 local function fetchUnit(unit, callback)
     if unitCache[unit.file] then callback(unitCache[unit.file]) return end
-    WebRequest.get(RAW_BASE .. "catalog/" .. unit.file .. "?v=" .. index.version, function(req)
-        if req.is_error or (req.response_code and req.response_code >= 400) then
-            setStatus("Could not load " .. unit.name .. ": " .. tostring(req.error or req.response_code))
+    fetch(RAW_BASE .. "catalog/" .. unit.file .. "?v=" .. index.version, function(text, err)
+        if not text then
+            setStatus("Could not load " .. unit.name .. ": " .. err)
             callback(nil)
             return
         end
-        local ok, entries = pcall(JSON.decode, req.text)
-        if not ok or type(entries) ~= "table" then
-            setStatus("Could not read " .. unit.name .. " (bad JSON).")
+        local entries = parseUnit(text)
+        if #entries == 0 then
+            setStatus("Could not read " .. unit.name .. ".")
             callback(nil)
             return
         end
@@ -841,39 +847,6 @@ local function describe(m)
     return table.concat(lines, "\n")
 end
 
--- Warband slot: a flat locked tile that holds one member's name and description. Any model
--- put on it gets them (and, if it runs the model script, becomes that member: activation,
--- swapping). Used to dress models a player picked themselves, or to update existing ones.
-local SLOT_SCRIPT = [[
--- TC Miniatures warband slot: put a model on this tile and it becomes this warband member.
-function onLoad(saved_data)
-    member = (saved_data ~= "" and JSON.decode(saved_data)) or {}
-end
-
-function onObjectDrop(player_color, obj)
-    if obj == nil or obj == self or obj.type == "Dice" or obj.name == "3DText" or not member.name then return end
-    local p, c = obj.getPosition(), self.getPosition()
-    local r = math.max(self.getBounds().size.x, self.getBounds().size.z) / 2 + 0.2
-    if (p.x - c.x) ^ 2 + (p.z - c.z) ^ 2 > r * r then return end
-    obj.setName(member.name)
-    obj.setDescription(member.desc)
-    if obj.hasTag("TCM_Model") then obj.call("becomeMember", {f = member.f, u = member.u}) end
-    self.setColorTint({0.2, 0.45, 0.2})   -- filled
-end
-]]
-
-local function slotData(name, desc, f, u, shortName)
-    return {
-        Name = "BlockSquare",
-        Nickname = shortName,
-        Transform = {posX = 0, posY = 0, posZ = 0, rotX = 0, rotY = 0, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1},
-        ColorDiffuse = {r = 0.3, g = 0.3, b = 0.3},
-        Locked = true,
-        LuaScript = SLOT_SCRIPT,
-        LuaScriptState = JSON.encode({name = name, desc = desc, f = f, u = u}),
-    }
-end
-
 -- Which catalog models a warband member may get: the first non-empty of
 --   1. models picked for imports of the chosen subfaction (i contains it),
 --   2. models made for that subfaction (s contains it),
@@ -910,8 +883,7 @@ end
 -- in the console); copies of the same unit get different models where the catalog has several.
 -- The export doesn't name the warband's subfaction, so models come from the vanilla picks.
 -- Mercenaries get the warband's faction (the most common one) for their activation icon.
--- mode "models": catalog models (see importPicks). mode "slots": one slot per member instead.
-local function importWarband(warband, mode, done)
+local function importWarband(warband, done)
     local members, missing, order = {}, {}, {}
     local factionVotes = {}
     for _, m in ipairs(warband.models or {}) do
@@ -939,35 +911,24 @@ local function importWarband(warband, mode, done)
             units[#units + 1] = mb.hit
         end
     end
-    if mode == "slots" then units = {} end   -- slots don't need any catalog models
     local entriesByKey, i = {}, 0
     local function finish()
         local items, used = {}, {}
         for _, mb in ipairs(members) do
             local key, uid = unitKey(mb.hit.f, mb.hit.unit.id), mb.hit.unit.id
-            local name, desc = nameBlock(mb.m), describe(mb.m)
-            if mode == "slots" then
-                items[#items + 1] = {data = slotData(name, desc, warbandFaction, uid, tostring(mb.m.name)),
-                                     w = 1.4, d = 1.4, raw = true, size = {1.3, 1.3}, label = tostring(mb.m.name)}
-            else
-                local merc = mb.hit.f == MERC and warbandFaction ~= nil
-                local list = importPicks(entriesByKey[key] or {}, nil, merc and {warbandFaction, "_"} or {"_"})
-                if #list > 0 then
-                    used[key] = (used[key] or 0) + 1
-                    local e = list[(used[key] - 1) % #list + 1]
-                    local data = JSON.decode(JSON.encode(e.data))   -- own copy: name/description differ
-                    data.Nickname = name
-                    data.Description = desc
-                    items[#items + 1] = {data = data, w = e.w, d = e.d,
-                                         state = {f = warbandFaction, u = uid, member = true}}
-                end
+            local merc = mb.hit.f == MERC and warbandFaction ~= nil
+            local list = importPicks(entriesByKey[key] or {}, nil, merc and {warbandFaction, "_"} or {"_"})
+            if #list > 0 then
+                used[key] = (used[key] or 0) + 1
+                local e = list[(used[key] - 1) % #list + 1]
+                items[#items + 1] = {e = e, name = nameBlock(mb.m), desc = describe(mb.m),
+                                     state = {f = warbandFaction, u = uid, member = true}}
             end
         end
         if #items > 0 then
             local name = tostring(warband["warband-name"] or "Warband")
-            queueBlock("warband/" .. tostring(warband["warband-id"] or name) .. "/" .. mode,
-                name .. (mode == "slots" and " - slots" or ""), items,
-                mode == "models" and "To swap a model: drop another model of the same unit on it (while it stands here)" or nil)
+            queueBlock("warband/" .. tostring(warband["warband-id"] or name), name, items,
+                "To swap a model: drop another model of the same unit on it (while it stands here)")
         end
         flushQueue(function() done(#items, order, missing) end)
     end
@@ -977,9 +938,9 @@ local function importWarband(warband, mode, done)
         if not hit then
             if equipment then finish() return end
             -- Equipment details for the descriptions; without them only names are shown.
-            WebRequest.get(RAW_BASE .. "config/equipment.json?v=" .. tostring(index.version), function(req)
-                local ok, data = pcall(JSON.decode, req.text or "")
-                if not req.is_error and ok and type(data) == "table" then equipment = data end
+            fetch(RAW_BASE .. "config/equipment.json?v=" .. tostring(index.version), function(text)
+                local ok, data = pcall(JSON.decode, text or "")
+                if ok and type(data) == "table" then equipment = data end
                 finish()
             end)
             return
@@ -1024,17 +985,30 @@ local function clearSpawned(key, done)
             end
         end
     end
-    if key then spawned[key], blocks[key] = nil, nil else spawned, blocks = {}, {} end
+    if key then blocks[key] = nil else blocks = {} end
     saveState()
     flushQueue(function() done(count) end)
 end
 
 -- ============ CATALOG LOADING ============
+-- The model script without its comment and blank lines: every model carries a copy, so this
+-- makes saves and model loading lighter (36 KB -> 24 KB per model). Only whole comment lines
+-- go (a line whose first non-space characters are "--"); code is left as it is.
+local function stripComments(text)
+    local out, p = {}, 1
+    while p <= #text do
+        local nl = string.find(text, "\n", p, true) or (#text + 1)
+        local line = string.sub(text, p, nl - 1)
+        local first = string.match(line, "^%s*(%S%S?)")
+        if first and first ~= "--" then out[#out + 1] = line end
+        p = nl + 1
+    end
+    return table.concat(out, "\n") .. "\n"
+end
 local function applyIndex(text)
     local ok, data = pcall(JSON.decode, text)
     if not ok or type(data) ~= "table" or type(data.factions) ~= "table" or #data.factions == 0 then
         setStatus("Catalog index could not be read.")
-        render()
         return
     end
     index, factionById, unitCache = data, {}, {}
@@ -1042,26 +1016,25 @@ local function applyIndex(text)
     buildImportIndex()
     if sel.f and not factionById[sel.f] then sel.f, sel.sub = nil, nil end
     setStatus("Catalog version " .. tostring(data.version) .. " loaded. Pick a faction on the left, then click units to spawn them.")
-    render()
     -- The model script is fetched with a timestamp: it can change without a catalog update.
-    WebRequest.get(RAW_BASE .. "tts/model.lua?v=" .. os.time(), function(req)
-        if req.is_error or (req.response_code and req.response_code >= 400) or not req.text then
-            modelScript = nil
+    fetch(RAW_BASE .. "tts/model.lua?v=" .. os.time(), function(text)
+        if not text then
+            modelScript, modelScriptJson = nil, nil
             setStatus("Catalog loaded, but the model script could not be loaded: models spawn without it.")
             return
         end
-        modelScript = req.text
+        modelScript = stripComments(text)
+        modelScriptJson = JSON.encode(modelScript)
     end)
 end
 
 local function loadIndex(catalogVersion)
-    WebRequest.get(RAW_BASE .. "catalog/index.json?v=" .. tostring(catalogVersion or os.time()), function(req)
-        if req.is_error or (req.response_code and req.response_code >= 400) then
-            setStatus("Could not load the catalog index (" .. tostring(req.error or req.response_code) .. ").")
-            render()
+    fetch(RAW_BASE .. "catalog/index.json?v=" .. tostring(catalogVersion or os.time()), function(text, err)
+        if not text then
+            setStatus("Could not load the catalog index (" .. err .. ").")
             return
         end
-        applyIndex(req.text)
+        applyIndex(text)
     end)
 end
 
@@ -1070,16 +1043,16 @@ end
 local function selfUpdate(v)
     if type(v.spawner) ~= "number" or v.spawner <= SPAWNER_VERSION or not v.spawnerUrl then return false end
     setStatus("Updating spawner to version " .. v.spawner .. "...")
-    WebRequest.get(RAW_BASE .. v.spawnerUrl .. "?v=" .. v.spawner, function(req)
+    fetch(RAW_BASE .. v.spawnerUrl .. "?v=" .. v.spawner, function(text)
         -- Guard against an endless reload loop: the new script must itself declare the
         -- version that version.json announces.
-        if req.is_error or not string.find(req.text or "", "SPAWNER_VERSION = " .. v.spawner, 1, true) then
+        if not text or not string.find(text, "SPAWNER_VERSION = " .. v.spawner, 1, true) then
             setStatus("Spawner update failed; using version " .. SPAWNER_VERSION .. ".")
             loadIndex(v.catalog)
             return
         end
         self.script_state = onSave()
-        self.setLuaScript(req.text)
+        self.setLuaScript(text)
         self.reload()   -- replaces this object; nothing may use `self` after this
     end)
     return true
@@ -1088,15 +1061,11 @@ end
 local function loadCatalog()
     index = nil
     setStatus("Loading catalog...")
-    render()
     -- version.json is tiny and fetched with a timestamp so a new catalog is seen immediately;
     -- the other files are fetched with the catalog version, so GitHub's cache can serve them.
-    WebRequest.get(RAW_BASE .. "catalog/version.json?v=" .. os.time(), function(req)
-        local v = {}
-        if not req.is_error then
-            local ok, data = pcall(JSON.decode, req.text)
-            if ok and type(data) == "table" then v = data end
-        end
+    fetch(RAW_BASE .. "catalog/version.json?v=" .. os.time(), function(text)
+        local ok, v = pcall(JSON.decode, text or "")
+        if not ok or type(v) ~= "table" then v = {} end
         if not selfUpdate(v) then loadIndex(v.catalog) end
     end)
 end
@@ -1136,7 +1105,7 @@ function ACTIONS.unit(key)
     local fe, uid = factionById[string.sub(key, 1, slash - 1)], string.sub(key, slash + 1)
     if not fe then return end
     busy = true
-    if spawned[key] then
+    if blocks[key] then
         clearSpawned(key, function(n)
             busy = false
             setStatus("Removed " .. n .. " object(s).")
@@ -1161,7 +1130,7 @@ ACTIONS["all"] = function()
     if not fe then return end
     local units = {}
     for _, u in ipairs(fe.units) do
-        if unitCount(u) > 0 and not spawned[unitKey(fe.id, u.id)] then units[#units + 1] = {f = fe.id, unit = u} end
+        if unitCount(u) > 0 and not blocks[unitKey(fe.id, u.id)] then units[#units + 1] = {f = fe.id, unit = u} end
     end
     if #units == 0 then setStatus("Everything in this faction is already spawned.") return end
     busy = true
@@ -1307,7 +1276,7 @@ end
 
 function ui_importText(player, value) importText = value or "" end
 
-local function importGo(mode)
+function ui_importGo()
     if busy then return end
     local warband = decodeWarband(importText)
     if not warband or #warband.models == 0 then
@@ -1316,16 +1285,11 @@ local function importGo(mode)
         return
     end
     listMode, importText, busy = "units", "", true
-    importWarband(warband, mode, function(n, order, missing)
+    importWarband(warband, function(n, order, missing)
         busy = false
-        local text = (mode == "slots" and ("Spawned " .. n .. " slot(s) for ") or ("Imported " .. n .. " model(s) of "))
-            .. tostring(warband["warband-name"]) .. "."
-        if mode == "slots" then
-            text = text .. " Put a model on each slot to give it that member's name and rules."
-        else
-            text = text .. " Don't like a model? Spawn its unit and drop another model on it (or one of your own "
-                .. "from the Extend UI area) while it's still on the platform."
-        end
+        local text = "Imported " .. n .. " model(s) of " .. tostring(warband["warband-name"]) .. "."
+            .. " Don't like a model? Spawn its unit and drop another model on it (or one of your own "
+            .. "from the Extend UI area) while it's still on the platform."
         if #order > 0 then
             local parts = {}
             for _, name in ipairs(order) do parts[#parts + 1] = name .. (missing[name] > 1 and (" x" .. missing[name]) or "") end
@@ -1334,9 +1298,6 @@ local function importGo(mode)
         setStatus(text)
     end)
 end
-
-function ui_importModels() importGo("models") end
-function ui_importSlots() importGo("slots") end
 
 -- ============ SAVE / LOAD ============
 function onSave()
@@ -1374,28 +1335,6 @@ function onLoad(saved_data)
         token = "tcm" .. os.time() .. math.random(100000, 999999)
         saveState()
     end
-    self.setVectorLines({})   -- older versions drew a spawn-area outline
     loadAssets()
-    render()
-
-    -- Other objects may still be loading during onLoad; look at them a frame later.
-    Wait.frames(function()
-        step("finding spawned models", function()
-            -- Rebuild which units are on the table from the spawned objects themselves.
-            local prefix = token .. "|"
-            for _, obj in ipairs(spawnedObjects()) do
-                local memo = obj.memo or ""
-                if string.find(memo, prefix, 1, true) == 1 then spawned[string.sub(memo, #prefix + 1)] = true end
-            end
-            -- Places of units that are gone (deleted by hand) are free again.
-            for key in pairs(blocks) do
-                if not spawned[key] then blocks[key] = nil end
-            end
-            -- Menu tokens of v8 (spawned objects) saved with the game.
-            for _, obj in ipairs(getAllObjects()) do
-                if obj.hasTag(UI_TAG) and string.find(obj.memo or "", prefix, 1, true) == 1 then obj.destruct() end
-            end
-        end)
-        step("loading the catalog", loadCatalog)
-    end, 1)
+    step("loading the catalog", loadCatalog)
 end

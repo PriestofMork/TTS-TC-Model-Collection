@@ -1,5 +1,5 @@
 {
- "version": 11,
+ "version": 12,
  "factions": [
   {
    "id": "new-antioch",
@@ -54,7 +54,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 5,
       "the-red-brigade": 6
      },
-     "file": "units/new-antioch/lieutenant.json"
+     "file": "units/new-antioch/lieutenant.txt"
     },
     {
      "id": "sniper-priest",
@@ -67,7 +67,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 3,
       "the-red-brigade": 2
      },
-     "file": "units/new-antioch/sniper-priest.json"
+     "file": "units/new-antioch/sniper-priest.txt"
     },
     {
      "id": "trench-cleric",
@@ -82,7 +82,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 4,
       "the-red-brigade": 2
      },
-     "file": "units/new-antioch/trench-cleric.json"
+     "file": "units/new-antioch/trench-cleric.txt"
     },
     {
      "id": "combat-engineer",
@@ -95,7 +95,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 1,
       "the-red-brigade": 2
      },
-     "file": "units/new-antioch/combat-engineer.json"
+     "file": "units/new-antioch/combat-engineer.txt"
     },
     {
      "id": "combat-medic",
@@ -106,7 +106,7 @@
       "kingdom-of-alba-assault-detatchment": 1,
       "the-red-brigade": 2
      },
-     "file": "units/new-antioch/combat-medic.json"
+     "file": "units/new-antioch/combat-medic.txt"
     },
     {
      "id": "mechanized-heavy-infantry",
@@ -120,7 +120,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 4,
       "the-red-brigade": 4
      },
-     "file": "units/new-antioch/mechanized-heavy-infantry.json",
+     "file": "units/new-antioch/mechanized-heavy-infantry.txt",
      "companion": [
       "mechanisedheavyinfantry"
      ]
@@ -138,7 +138,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 5,
       "the-red-brigade": 6
      },
-     "file": "units/new-antioch/shocktrooper.json"
+     "file": "units/new-antioch/shocktrooper.txt"
     },
     {
      "id": "yeoman",
@@ -153,7 +153,7 @@
       "stosstruppen-of-the-free-state-of-prussia": 3,
       "the-red-brigade": 4
      },
-     "file": "units/new-antioch/yeoman.json"
+     "file": "units/new-antioch/yeoman.txt"
     },
     {
      "id": "crimson-communicant",
@@ -163,7 +163,7 @@
      "subs": {
       "the-red-brigade": 1
      },
-     "file": "units/new-antioch/crimson-communicant.json"
+     "file": "units/new-antioch/crimson-communicant.txt"
     }
    ]
   },
@@ -203,7 +203,7 @@
       "procession-of-the-sacred-affliction": 2,
       "war-pilgrimage-of-saint-methodius": 1
      },
-     "file": "units/trench-pilgrims/war-prophet.json"
+     "file": "units/trench-pilgrims/war-prophet.txt"
     },
     {
      "id": "castigator",
@@ -213,7 +213,7 @@
      "subs": {
       "procession-of-the-sacred-affliction": 6
      },
-     "file": "units/trench-pilgrims/castigator.json"
+     "file": "units/trench-pilgrims/castigator.txt"
     },
     {
      "id": "communicant",
@@ -223,7 +223,7 @@
      "subs": {
       "procession-of-the-sacred-affliction": 2
      },
-     "file": "units/trench-pilgrims/communicant.json"
+     "file": "units/trench-pilgrims/communicant.txt"
     },
     {
      "id": "anchorite-shrine",
@@ -234,7 +234,7 @@
       "procession-of-the-sacred-affliction": 1,
       "war-pilgrimage-of-saint-methodius": 1
      },
-     "file": "units/trench-pilgrims/anchorite-shrine.json"
+     "file": "units/trench-pilgrims/anchorite-shrine.txt"
     },
     {
      "id": "ecclesiastic-prisoner",
@@ -246,7 +246,7 @@
       "procession-of-the-sacred-affliction": 1,
       "war-pilgrimage-of-saint-methodius": 1
      },
-     "file": "units/trench-pilgrims/ecclesiastic-prisoner.json"
+     "file": "units/trench-pilgrims/ecclesiastic-prisoner.txt"
     },
     {
      "id": "stigmatic-nun",
@@ -257,7 +257,7 @@
       "procession-of-the-sacred-affliction": 5,
       "war-pilgrimage-of-saint-methodius": 2
      },
-     "file": "units/trench-pilgrims/stigmatic-nun.json"
+     "file": "units/trench-pilgrims/stigmatic-nun.txt"
     },
     {
      "id": "trench-pilgrim",
@@ -268,7 +268,7 @@
       "procession-of-the-sacred-affliction": 4,
       "war-pilgrimage-of-saint-methodius": 2
      },
-     "file": "units/trench-pilgrims/trench-pilgrim.json"
+     "file": "units/trench-pilgrims/trench-pilgrim.txt"
     }
    ]
   },
@@ -302,7 +302,7 @@
      "count": 6,
      "any": 6,
      "subs": {},
-     "file": "units/iron-sultanate/yuzbasi-captain.json",
+     "file": "units/iron-sultanate/yuzbasi-captain.txt",
      "companion": [
       "yuzbasicaptain"
      ]
@@ -313,7 +313,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/iron-sultanate/jabirean-alchemist.json"
+     "file": "units/iron-sultanate/jabirean-alchemist.txt"
     },
     {
      "id": "sultanate-assassin",
@@ -323,7 +323,7 @@
      "subs": {
       "defenders-of-the-iron-wall": 1
      },
-     "file": "units/iron-sultanate/sultanate-assassin.json"
+     "file": "units/iron-sultanate/sultanate-assassin.txt"
     },
     {
      "id": "azeb",
@@ -331,7 +331,7 @@
      "count": 14,
      "any": 14,
      "subs": {},
-     "file": "units/iron-sultanate/azeb.json"
+     "file": "units/iron-sultanate/azeb.txt"
     },
     {
      "id": "brazen-bull",
@@ -339,7 +339,7 @@
      "count": 6,
      "any": 6,
      "subs": {},
-     "file": "units/iron-sultanate/brazen-bull.json"
+     "file": "units/iron-sultanate/brazen-bull.txt"
     },
     {
      "id": "janissary",
@@ -349,7 +349,7 @@
      "subs": {
       "fidai-of-alamut-the-cabal-of-assassins": 1
      },
-     "file": "units/iron-sultanate/janissary.json",
+     "file": "units/iron-sultanate/janissary.txt",
      "companion": [
       "janissaries"
      ]
@@ -360,7 +360,7 @@
      "count": 5,
      "any": 5,
      "subs": {},
-     "file": "units/iron-sultanate/lion-of-jabir.json"
+     "file": "units/iron-sultanate/lion-of-jabir.txt"
     },
     {
      "id": "sultanate-sapper",
@@ -368,7 +368,7 @@
      "count": 5,
      "any": 5,
      "subs": {},
-     "file": "units/iron-sultanate/sultanate-sapper.json"
+     "file": "units/iron-sultanate/sultanate-sapper.txt"
     },
     {
      "id": "takwin-homunculus",
@@ -376,7 +376,7 @@
      "count": 10,
      "any": 10,
      "subs": {},
-     "file": "units/iron-sultanate/takwin-homunculus.json",
+     "file": "units/iron-sultanate/takwin-homunculus.txt",
      "companion": [
       "takwincreation"
      ]
@@ -387,7 +387,7 @@
      "count": 1,
      "any": 1,
      "subs": {},
-     "file": "units/iron-sultanate/sipahi-automaton-cavalry.json"
+     "file": "units/iron-sultanate/sipahi-automaton-cavalry.txt"
     }
    ]
   },
@@ -426,7 +426,7 @@
       "knights-of-avarice": 2,
       "trench-ghosts": 2
      },
-     "file": "units/heretic-legion/heretic-priest.json"
+     "file": "units/heretic-legion/heretic-priest.txt"
     },
     {
      "id": "death-commando",
@@ -436,7 +436,7 @@
      "subs": {
       "heretic-naval-raiders": 2
      },
-     "file": "units/heretic-legion/death-commando.json",
+     "file": "units/heretic-legion/death-commando.txt",
      "companion": [
       "hereticdeathcommando"
      ]
@@ -451,7 +451,7 @@
       "knights-of-avarice": 2,
       "trench-ghosts": 2
      },
-     "file": "units/heretic-legion/heretic-chorister.json",
+     "file": "units/heretic-legion/heretic-chorister.txt",
      "companion": [
       "heretichorister",
       "hereticchorister"
@@ -467,7 +467,7 @@
       "knights-of-avarice": 2,
       "trench-ghosts": 3
      },
-     "file": "units/heretic-legion/anointed-heavy-infantry.json",
+     "file": "units/heretic-legion/anointed-heavy-infantry.txt",
      "companion": [
       "annointedheavyinfantry"
      ]
@@ -481,7 +481,7 @@
       "heretic-naval-raiders": 2,
       "knights-of-avarice": 2
      },
-     "file": "units/heretic-legion/artillery-witch.json"
+     "file": "units/heretic-legion/artillery-witch.txt"
     },
     {
      "id": "heretic-trooper",
@@ -493,7 +493,7 @@
       "knights-of-avarice": 2,
       "trench-ghosts": 3
      },
-     "file": "units/heretic-legion/heretic-trooper.json"
+     "file": "units/heretic-legion/heretic-trooper.txt"
     },
     {
      "id": "war-wolf-assault-beast",
@@ -503,7 +503,7 @@
      "subs": {
       "knights-of-avarice": 2
      },
-     "file": "units/heretic-legion/war-wolf-assault-beast.json"
+     "file": "units/heretic-legion/war-wolf-assault-beast.txt"
     },
     {
      "id": "wretched",
@@ -514,7 +514,7 @@
       "heretic-naval-raiders": 4,
       "knights-of-avarice": 2
      },
-     "file": "units/heretic-legion/wretched.json"
+     "file": "units/heretic-legion/wretched.txt"
     }
    ]
   },
@@ -545,7 +545,7 @@
      "subs": {
       "the-great-hunger": 2
      },
-     "file": "units/cult-of-the-black-grail/lord-of-tumors.json"
+     "file": "units/cult-of-the-black-grail/lord-of-tumors.txt"
     },
     {
      "id": "plague-knight",
@@ -556,7 +556,7 @@
       "dirge-of-the-great-hegemon": 5,
       "the-great-hunger": 3
      },
-     "file": "units/cult-of-the-black-grail/plague-knight.json"
+     "file": "units/cult-of-the-black-grail/plague-knight.txt"
     },
     {
      "id": "corpse-guard",
@@ -566,7 +566,7 @@
      "subs": {
       "the-great-hunger": 1
      },
-     "file": "units/cult-of-the-black-grail/corpse-guard.json"
+     "file": "units/cult-of-the-black-grail/corpse-guard.txt"
     },
     {
      "id": "amalgam",
@@ -574,7 +574,7 @@
      "count": 3,
      "any": 3,
      "subs": {},
-     "file": "units/cult-of-the-black-grail/amalgam.json"
+     "file": "units/cult-of-the-black-grail/amalgam.txt"
     },
     {
      "id": "grail-thrall",
@@ -585,7 +585,7 @@
       "dirge-of-the-great-hegemon": 4,
       "the-great-hunger": 5
      },
-     "file": "units/cult-of-the-black-grail/grail-thrall.json"
+     "file": "units/cult-of-the-black-grail/grail-thrall.txt"
     },
     {
      "id": "fly-thrall",
@@ -593,7 +593,7 @@
      "count": 5,
      "any": 5,
      "subs": {},
-     "file": "units/cult-of-the-black-grail/fly-thrall.json"
+     "file": "units/cult-of-the-black-grail/fly-thrall.txt"
     },
     {
      "id": "herald-of-beelzebub",
@@ -601,7 +601,7 @@
      "count": 5,
      "any": 5,
      "subs": {},
-     "file": "units/cult-of-the-black-grail/herald-of-beelzebub.json"
+     "file": "units/cult-of-the-black-grail/herald-of-beelzebub.txt"
     },
     {
      "id": "hounds-of-the-black-grail",
@@ -611,7 +611,7 @@
      "subs": {
       "the-great-hunger": 3
      },
-     "file": "units/cult-of-the-black-grail/hounds-of-the-black-grail.json"
+     "file": "units/cult-of-the-black-grail/hounds-of-the-black-grail.txt"
     },
     {
      "id": "matagot-hag",
@@ -621,7 +621,7 @@
      "subs": {
       "the-great-hunger": 1
      },
-     "file": "units/cult-of-the-black-grail/matagot-hag.json"
+     "file": "units/cult-of-the-black-grail/matagot-hag.txt"
     },
     {
      "id": "gregori-gula",
@@ -631,7 +631,7 @@
      "subs": {
       "the-great-hunger": 5
      },
-     "file": "units/cult-of-the-black-grail/gregori-gula.json",
+     "file": "units/cult-of-the-black-grail/gregori-gula.txt",
      "companion": [
       "gergorigula"
      ]
@@ -691,7 +691,7 @@
       "sloth": 1,
       "wrath": 1
      },
-     "file": "units/court-of-the-seven-headed-serpent/praetor.json"
+     "file": "units/court-of-the-seven-headed-serpent/praetor.txt"
     },
     {
      "id": "sorcerer",
@@ -706,7 +706,7 @@
       "sloth": 1,
       "wrath": 1
      },
-     "file": "units/court-of-the-seven-headed-serpent/sorcerer.json"
+     "file": "units/court-of-the-seven-headed-serpent/sorcerer.txt"
     },
     {
      "id": "hell-knight",
@@ -722,7 +722,7 @@
       "sloth": 1,
       "wrath": 2
      },
-     "file": "units/court-of-the-seven-headed-serpent/hell-knight.json"
+     "file": "units/court-of-the-seven-headed-serpent/hell-knight.txt"
     },
     {
      "id": "hunter-of-the-left-hand-path",
@@ -737,7 +737,7 @@
       "sloth": 1,
       "wrath": 1
      },
-     "file": "units/court-of-the-seven-headed-serpent/hunter-of-the-left-hand-path.json"
+     "file": "units/court-of-the-seven-headed-serpent/hunter-of-the-left-hand-path.txt"
     },
     {
      "id": "desecrated-saint",
@@ -753,7 +753,7 @@
       "sloth": 1,
       "wrath": 1
      },
-     "file": "units/court-of-the-seven-headed-serpent/desecrated-saint.json"
+     "file": "units/court-of-the-seven-headed-serpent/desecrated-saint.txt"
     },
     {
      "id": "pit-locust",
@@ -769,7 +769,7 @@
       "sloth": 1,
       "wrath": 1
      },
-     "file": "units/court-of-the-seven-headed-serpent/pit-locust.json"
+     "file": "units/court-of-the-seven-headed-serpent/pit-locust.txt"
     },
     {
      "id": "wretched",
@@ -777,7 +777,7 @@
      "count": 5,
      "any": 5,
      "subs": {},
-     "file": "units/court-of-the-seven-headed-serpent/wretched.json",
+     "file": "units/court-of-the-seven-headed-serpent/wretched.txt",
      "companion": [
       "md_wretched_court"
      ]
@@ -796,7 +796,7 @@
       "sloth": 1,
       "wrath": 2
      },
-     "file": "units/court-of-the-seven-headed-serpent/yoke-fiend.json"
+     "file": "units/court-of-the-seven-headed-serpent/yoke-fiend.txt"
     }
    ]
   },
@@ -811,7 +811,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/combat-biologist.json"
+     "file": "units/mercenaries/combat-biologist.txt"
     },
     {
      "id": "communicant-anti-tank-hunter",
@@ -819,7 +819,7 @@
      "count": 8,
      "any": 8,
      "subs": {},
-     "file": "units/mercenaries/communicant-anti-tank-hunter.json"
+     "file": "units/mercenaries/communicant-anti-tank-hunter.txt"
     },
     {
      "id": "goetic-warlock",
@@ -827,7 +827,7 @@
      "count": 6,
      "any": 6,
      "subs": {},
-     "file": "units/mercenaries/goetic-warlock.json"
+     "file": "units/mercenaries/goetic-warlock.txt"
     },
     {
      "id": "mamluk-faris",
@@ -835,7 +835,7 @@
      "count": 5,
      "any": 5,
      "subs": {},
-     "file": "units/mercenaries/mamluk-faris.json"
+     "file": "units/mercenaries/mamluk-faris.txt"
     },
     {
      "id": "mendelist-ammo-monk",
@@ -843,7 +843,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/mendelist-ammo-monk.json"
+     "file": "units/mercenaries/mendelist-ammo-monk.txt"
     },
     {
      "id": "observer",
@@ -851,7 +851,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/observer.json"
+     "file": "units/mercenaries/observer.txt"
     },
     {
      "id": "scripture-guardian",
@@ -859,7 +859,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/scripture-guardian.json"
+     "file": "units/mercenaries/scripture-guardian.txt"
     },
     {
      "id": "sin-eater",
@@ -867,7 +867,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/sin-eater.json"
+     "file": "units/mercenaries/sin-eater.txt"
     },
     {
      "id": "sister-of-saint-cosmas",
@@ -875,7 +875,7 @@
      "count": 4,
      "any": 4,
      "subs": {},
-     "file": "units/mercenaries/sister-of-saint-cosmas.json",
+     "file": "units/mercenaries/sister-of-saint-cosmas.txt",
      "companion": [
       "md_combatmedic_mv_pilgrim"
      ]
@@ -886,7 +886,7 @@
      "count": 3,
      "any": 3,
      "subs": {},
-     "file": "units/mercenaries/witchburner.json"
+     "file": "units/mercenaries/witchburner.txt"
     },
     {
      "id": "golem",
@@ -894,7 +894,7 @@
      "count": 9,
      "any": 9,
      "subs": {},
-     "file": "units/mercenaries/golem.json",
+     "file": "units/mercenaries/golem.txt",
      "companion": [
       "md_takwincreation_golem"
      ],
@@ -906,7 +906,7 @@
      "count": 14,
      "any": 14,
      "subs": {},
-     "file": "units/mercenaries/dogs.json",
+     "file": "units/mercenaries/dogs.txt",
      "companion": [
       "trenchdog"
      ]
@@ -917,7 +917,7 @@
      "count": 3,
      "any": 3,
      "subs": {},
-     "file": "units/mercenaries/hellhound.json",
+     "file": "units/mercenaries/hellhound.txt",
      "companion": [
       "md_trenchdog_hellhound"
      ]
