@@ -1,5 +1,5 @@
 {
- "version": 12,
+ "version": 13,
  "factions": [
   {
    "id": "new-antioch",
@@ -59,8 +59,8 @@
     {
      "id": "sniper-priest",
      "name": "Sniper Priest",
-     "count": 16,
-     "any": 8,
+     "count": 17,
+     "any": 9,
      "subs": {
       "eire-rangers": 1,
       "kingdom-of-alba-assault-detatchment": 2,
@@ -87,8 +87,8 @@
     {
      "id": "combat-engineer",
      "name": "Combat Engineer",
-     "count": 10,
-     "any": 4,
+     "count": 11,
+     "any": 5,
      "subs": {
       "eire-rangers": 1,
       "kingdom-of-alba-assault-detatchment": 2,
@@ -143,8 +143,8 @@
     {
      "id": "yeoman",
      "name": "Yeoman",
-     "count": 37,
-     "any": 19,
+     "count": 39,
+     "any": 21,
      "subs": {
       "eire-rangers": 3,
       "expeditionary-forces-of-abyssinia": 2,
@@ -197,8 +197,8 @@
     {
      "id": "war-prophet",
      "name": "War Prophet",
-     "count": 8,
-     "any": 5,
+     "count": 9,
+     "any": 6,
      "subs": {
       "procession-of-the-sacred-affliction": 2,
       "war-pilgrimage-of-saint-methodius": 1
@@ -208,8 +208,8 @@
     {
      "id": "castigator",
      "name": "Castigator",
-     "count": 10,
-     "any": 4,
+     "count": 12,
+     "any": 6,
      "subs": {
       "procession-of-the-sacred-affliction": 6
      },
@@ -229,9 +229,8 @@
      "id": "anchorite-shrine",
      "name": "Anchorite Shrine",
      "count": 8,
-     "any": 6,
+     "any": 7,
      "subs": {
-      "procession-of-the-sacred-affliction": 1,
       "war-pilgrimage-of-saint-methodius": 1
      },
      "file": "units/trench-pilgrims/anchorite-shrine.txt"
@@ -239,20 +238,16 @@
     {
      "id": "ecclesiastic-prisoner",
      "name": "Ecclesiastic Prisoner",
-     "count": 5,
-     "any": 5,
-     "subs": {
-      "cavalcade-of-the-tenth-plague": 1,
-      "procession-of-the-sacred-affliction": 1,
-      "war-pilgrimage-of-saint-methodius": 1
-     },
+     "count": 6,
+     "any": 6,
+     "subs": {},
      "file": "units/trench-pilgrims/ecclesiastic-prisoner.txt"
     },
     {
      "id": "stigmatic-nun",
      "name": "Stigmatic Nun",
-     "count": 22,
-     "any": 16,
+     "count": 24,
+     "any": 18,
      "subs": {
       "procession-of-the-sacred-affliction": 5,
       "war-pilgrimage-of-saint-methodius": 2
@@ -262,8 +257,8 @@
     {
      "id": "trench-pilgrim",
      "name": "Trench Pilgrim",
-     "count": 22,
-     "any": 16,
+     "count": 24,
+     "any": 18,
      "subs": {
       "procession-of-the-sacred-affliction": 4,
       "war-pilgrimage-of-saint-methodius": 2
@@ -419,10 +414,10 @@
     {
      "id": "heretic-priest",
      "name": "Heretic Priest",
-     "count": 9,
+     "count": 11,
      "any": 3,
      "subs": {
-      "heretic-naval-raiders": 2,
+      "heretic-naval-raiders": 4,
       "knights-of-avarice": 2,
       "trench-ghosts": 2
      },
@@ -431,10 +426,10 @@
     {
      "id": "death-commando",
      "name": "Death Commando",
-     "count": 4,
+     "count": 5,
      "any": 2,
      "subs": {
-      "heretic-naval-raiders": 2
+      "heretic-naval-raiders": 3
      },
      "file": "units/heretic-legion/death-commando.txt",
      "companion": [
@@ -460,10 +455,10 @@
     {
      "id": "anointed-heavy-infantry",
      "name": "Anointed Heavy Infantry",
-     "count": 14,
+     "count": 15,
      "any": 5,
      "subs": {
-      "heretic-naval-raiders": 4,
+      "heretic-naval-raiders": 5,
       "knights-of-avarice": 2,
       "trench-ghosts": 3
      },
@@ -486,10 +481,10 @@
     {
      "id": "heretic-trooper",
      "name": "Heretic Trooper",
-     "count": 34,
+     "count": 36,
      "any": 21,
      "subs": {
-      "heretic-naval-raiders": 8,
+      "heretic-naval-raiders": 10,
       "knights-of-avarice": 2,
       "trench-ghosts": 3
      },
@@ -540,8 +535,8 @@
     {
      "id": "lord-of-tumors",
      "name": "Lord of Tumors",
-     "count": 8,
-     "any": 6,
+     "count": 9,
+     "any": 7,
      "subs": {
       "the-great-hunger": 2
      },
@@ -571,16 +566,16 @@
     {
      "id": "amalgam",
      "name": "Amalgam",
-     "count": 3,
-     "any": 3,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/cult-of-the-black-grail/amalgam.txt"
     },
     {
      "id": "grail-thrall",
      "name": "Grail Thrall",
-     "count": 20,
-     "any": 13,
+     "count": 22,
+     "any": 15,
      "subs": {
       "dirge-of-the-great-hegemon": 4,
       "the-great-hunger": 5
@@ -816,8 +811,8 @@
     {
      "id": "communicant-anti-tank-hunter",
      "name": "Communicant Anti-Tank Hunter",
-     "count": 8,
-     "any": 8,
+     "count": 9,
+     "any": 9,
      "subs": {},
      "file": "units/mercenaries/communicant-anti-tank-hunter.txt"
     },
@@ -848,8 +843,8 @@
     {
      "id": "observer",
      "name": "Observer",
-     "count": 4,
-     "any": 4,
+     "count": 5,
+     "any": 5,
      "subs": {},
      "file": "units/mercenaries/observer.txt"
     },
@@ -883,8 +878,8 @@
     {
      "id": "witchburner",
      "name": "Witchburner",
-     "count": 3,
-     "any": 3,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/witchburner.txt"
     },
@@ -914,8 +909,8 @@
     {
      "id": "hellhound",
      "name": "Hellhound",
-     "count": 3,
-     "any": 3,
+     "count": 4,
+     "any": 4,
      "subs": {},
      "file": "units/mercenaries/hellhound.txt",
      "companion": [
