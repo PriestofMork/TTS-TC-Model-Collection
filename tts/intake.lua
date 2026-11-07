@@ -1,111 +1,106 @@
 -- =============================================
 -- TC MINIATURES - INTAKE STATION (dev save only)
 -- =============================================
--- Sorting board for the maintainer. Choose a faction and press Open board: the station lays
--- out a grid to its right, one column per unit (leader first, then the mercenaries the faction
--- can hire) and
--- two rows per context (Vanilla, then each subfaction; each with General and Import), and takes
--- every catalogued model of that faction out of its storage bag into its cell. Add new models
--- by dropping them into a cell, retag by moving them, destroy them via the Discard strip.
--- Close board tags every model by the cell it lies in, strips foreign scripts and puts it back
--- into its unit bag. tools/export.py then reads the save (including bag contents).
+-- Sorting board for the maintainer. The catalog is the storage: there are no bags. Choose a
+-- faction (and a subfaction to focus on) and press Open board: the station lays out a grid to
+-- its right, one column per unit (leader first, then the mercenaries the faction can hire),
+-- two rows per context (Vanilla and each subfaction, each with General and Import), and spawns
+-- every catalog model of those units into its cells, read from the local repo that
+-- tools/tts_bridge.py listen serves (so the board shows the latest state, also before a push).
 --
--- One object = one cell. A model that belongs in several cells is copied, one copy per cell
--- (export merges copies of the same model within a unit). Tags written by the board:
---   General, Vanilla        {"s":[]}                    no subfaction theme
---   General, subfaction C   {"s":[C]}                   made for C
---   Import, context X       {"s":[],"i":[X],"k":"i"}    preferred pick for X's warband imports;
---                                                       k = "i": s carries no theme
+-- Work by moving models: drop new ones into a cell, move them to retag, copy (Ctrl+C / V) to
+-- put a model in several cells, drop it on Discard to remove it. Models added since the board
+-- opened (or the last Publish) are outlined green, moved ones yellow. Publish sends every
+-- model lying in a cell to the bridge listener, which writes catalog/ (tools/publish.py) and
+-- answers with a report (changes, catalog version, gaps). Then commit and push the catalog.
+--
+-- One object = one cell. A model that belongs in several cells is copied, one copy per cell;
+-- export merges copies of the same model within a unit. What a cell means:
+--   General, Vanilla        no subfaction theme
+--   General, subfaction C   made for C
+--   Import, context X       preferred pick for X's warband imports
 -- A model that sits only in Import rows (no General copy) also counts as General for those
--- contexts (export applies this when merging), so moving a model into an Import row is enough;
--- copy it only to keep it under another theme too (e.g. vanilla Azebs picked for a subfaction).
--- X is "_" (vanilla) or a subfaction id. A faction's mercenaries use the faction id instead of
--- "_" (Heretic Legion's vanilla pick of Goetic Warlocks: i = ["heretic-legion"]); "_" on a
--- mercenary is the Mercenaries board's own vanilla pick. Older tags with several entries are
--- split into copies when their board opens.
---
--- Storage stays one bag per unit: ~2800 models laid out at once would make the dev save very
--- heavy, and a board only takes out one faction.
+-- contexts, so after a Publish it shows in both. A faction's mercenaries use the faction id
+-- for its vanilla import pick; the Mercenaries board's own pick is "_" (see tools/publish.py).
 
 -- ===================== CONFIG =====================
-local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
-local UNITS_URL = RAW_BASE .. "config/units.json"
-
--- Paste the contents of config/units.json here (as a [[long string]]) to work offline or
--- before the repo is pushed. nil = fetch from GitHub on load / Reload.
-local LOCAL_UNITS_JSON = nil
+-- The local repo, served by `python tools/tts_bridge.py listen` (needed for Open and Publish).
+local REPO = "http://127.0.0.1:8765/"
 
 local MERC = "mercenaries"
 
 -- Board layout, in world units relative to the station (its position and rotation when the
 -- board was opened, not its scale). x runs to the right of a player standing on the station's
 -- local +z side (where a panel with rotation "0 0 180" reads upright, tested on the spawner),
--- z away from them. The board lies right of the station (the bags are on its left), so the
--- columns read left to right from the faction's leader to its mercenaries; rows start level
--- with the station's front edge and grow away from the player.
+-- z away from them. Columns read left to right from the faction's leader to its mercenaries;
+-- rows start level with the station's front edge and grow away from the player, the focused
+-- subfaction's rows first.
 local BOARD_GAP   = 3      -- between the station and the board's left edge
-local ROW_LABEL_W = 8      -- column of row labels on the board's left (next to the station)
-local HEADER_D    = 2.5    -- row of column labels nearest to the player
+local ROW_LABEL_W = 8      -- columns of row labels at the board's left and right edges
+local HEADER_D    = 2.5    -- rows of column labels: nearest to the player and at the far end
 local CELL_GAP    = 0.5    -- between cells
 local CELL_PAD    = 0.3    -- around and between models in a cell
 local MIN_COL_W   = 6
 local MAX_COL_W   = 24
 local MIN_ROW_D   = 3
 local SPARE_D     = 2      -- empty room at the far side of every row, for new models
+local FOCUS_SPARE = 4      -- extra room in the focused rows (where new models usually go)
 local DISCARD_D   = 5      -- Discard strip beyond the last row
 local TILE_THICKNESS = 0.1
-local DEFAULT_SIZE   = 1.5 -- footprint of a model whose tag has no w/d
+local DEFAULT_SIZE   = 1.5 -- footprint of a model without w/d
 
 -- Yaw of models on the board (relative to the station) so they face the player, and of the
 -- flat 3D text labels so they read upright from the player's side. Same values as the
--- spawner, whose reader also stands on the +z side; change if they come out turned.
+-- spawner, whose reader also stands on the +z side.
 local MODEL_YAW   = 0
 local LABEL_PITCH = 90
 local LABEL_YAW   = 180
-local LABEL_FONT  = 32
+local LABEL_FONT  = 40     -- column and row names
+local COUNT_FONT  = 28     -- model count in each cell's corner
 
 local COLOR_GENERAL = {0.18, 0.18, 0.18}
 local COLOR_IMPORT  = {0.12, 0.22, 0.15}
+local COLOR_FOCUS   = {0.24, 0.2, 0.12}   -- General cells of the focused context
+local COLOR_FOCUS_I = {0.16, 0.24, 0.14}  -- Import cells of the focused context
 local COLOR_DISCARD = {0.4, 0.08, 0.08}
 local COLOR_HEADER  = {0.08, 0.08, 0.08}
-
-local BAG_OFFSET   = {x = 12, z = 0}   -- first storage bag (local +x: the player's left)
-local BAG_SPACING  = 2.5
-local BAGS_PER_ROW = 10
 
 -- TTS object names that count as models. Custom_Model has a CustomMesh; some source mods
 -- use asset bundles or image figurines instead.
 local MODEL_NAMES = {Custom_Model = true, Custom_Assetbundle = true, Figurine_Custom = true}
 local BOARD_TAG   = "TCM_Board"         -- tiles and labels of the open board
 
-local BATCH_SIZE = 10   -- objects taken out, stored or spawned per frame
+local BATCH_SIZE = 10   -- objects spawned or destroyed per frame
+local PUBLISH_TIMEOUT = 90   -- seconds to wait for the bridge listener's report
 
 -- Object XML UI is positioned from the object's centre; its z is height (negative = up) in
 -- UI units (100 per local unit). The panel is lifted to the top face automatically, plus
 -- this margin in UI units.
 local UI_MARGIN = 5
-local UI_SCALE  = 1
 
-local COLOR_OK   = {0.2, 1, 0.2}
-local COLOR_WARN = {1, 0.8, 0.1}
-local COLOR_BAD  = {1, 0.2, 0.2}
+local COLOR_NEW   = {0.2, 1, 0.2}    -- added since the board opened / the last Publish
+local COLOR_MOVED = {1, 0.8, 0.1}    -- in another cell than when the board opened
+local COLOR_BAD   = {1, 0.2, 0.2}    -- duplicate in its cell, on Discard, or outside any cell
 -- ==================================================
 
 local config       = nil        -- decoded units.json
-local factionIndex = {}         -- faction id -> {faction=, index=, units={id->unit}, unitIndex={id->n}, subs={id->sub}}
-local subOwner     = {}         -- subfaction id -> faction id
-local sel          = {f = nil}  -- faction chosen in the dropdown
--- The open board (saved): f, frame = {x, y, z, yaw}, cols = {f, u, name, x0, x1}, rows =
--- {kind = "g"|"i", ctx = "_"|subfaction id, name, z0, z1}, discard = {z0, z1}, bounds.
+local factionIndex = {}         -- faction id -> {faction=, units={id->unit}}
+local sel          = {f = nil, focus = "_"}   -- faction and focused context ("_" = Vanilla)
+-- The open board (saved): f, focus, frame = {x, y, z, yaw}, cols = {f, u, name, x0, x1}, rows =
+-- {kind = "g"|"i", ctx, name, z0, z1}, discard = {z0, z1}, bounds, counts = {"c:r" -> label
+-- GUID}, origin = {model GUID -> "c:r"}: where each model was when the board opened (or at the
+-- last Publish), for the new / moved marks and the change report.
 local board        = nil
 local status       = "Loading config..."
 local busy         = false
 local renderPending = false
 local highlighted  = {}
-local bagGuids     = {}         -- "f/u" -> guid; cache only, bags are identified by their GM Notes marker
 local keyByGuid    = {}         -- model identity (see modelKey) of objects on the board
 local pendingDrops = {}
 local dropToken    = 0
+local closeArmed   = 0          -- os.time() until which a second Close discards the changes
+local publishId    = nil        -- the Publish waiting for its report
+local publishLines = {}         -- what that Publish changes (shown above the report)
 
 -- ============ UTIL ============
 local function round(num, dec)
@@ -133,13 +128,6 @@ local function wrapWords(text, width)
 end
 
 local function list(t) return type(t) == "table" and t or {} end
-
--- World offset (x, z) relative to the station -> world position. positionToWorld works in
--- local (scaled) units, so divide by scale to keep offsets in world units.
-local function toWorld(x, z)
-    local s = self.getScale()
-    return self.positionToWorld(Vector(x / s.x, 0, z / s.z))
-end
 
 -- Panel z that puts the UI just above the object's top face, whatever its shape and scale.
 -- getBoundsNormalized ignores rotation but includes scale, so divide scale out to get local units.
@@ -189,65 +177,22 @@ local function isModel(obj)
     return obj ~= nil and MODEL_NAMES[obj.name] and not obj.getLock() and not obj.hasTag(BOARD_TAG)
 end
 
--- ============ TAGS ============
--- GM Notes of source-mod objects can contain anything, so do a cheap plain find before decoding.
-local function parseTag(notes)
-    if not notes or notes == "" or not string.find(notes, '"tc"', 1, true) then return nil end
-    local ok, t = pcall(JSON.decode, notes)
-    if ok and type(t) == "table" and t.tc == 1 then return t end
-    return nil
-end
-
-local function parseBagMarker(notes)
-    if not notes or not string.find(notes, '"tcbag"', 1, true) then return nil end
-    local ok, t = pcall(JSON.decode, notes)
-    if ok and type(t) == "table" and t.tcbag == 1 then return t end
-    return nil
-end
-
--- s holds subfaction ids of any faction (a mercenary can be made for Knights of Avarice),
--- plus "_" (vanilla) in tags pulled from the catalog, where a model can be vanilla and themed
--- at once; i also allows "_" and faction ids (see the header).
-local function tagValid(t)
-    local fe = config and factionIndex[t.f]
-    if not fe or not fe.units[t.u] then return false end
-    for _, sid in ipairs(list(t.s)) do
-        if sid ~= "_" and not subOwner[sid] then return false end
-    end
-    for _, x in ipairs(list(t.i)) do
-        if x ~= "_" and not subOwner[x] and not factionIndex[x] then return false end
-    end
-    return true
-end
-
--- What a tag says, as single memberships {kind = "g"|"i", ctx}: one per board cell (on some
--- board) the model belongs in.
+-- ============ MEMBERSHIPS ============
+-- What a catalog entry's s / i say, as single memberships {kind = "g"|"i", ctx}: one per board
+-- cell (on some board) the model belongs in. "_" in s (vanilla next to themes) or an empty s
+-- = General Vanilla.
 local function membershipsOf(t)
     local out = {}
-    if t.k ~= "i" then
-        local s = list(t.s)
-        if #s == 0 then out[#out + 1] = {kind = "g", ctx = "_"} end
-        for _, sid in ipairs(s) do out[#out + 1] = {kind = "g", ctx = sid} end
-    end
+    local s = list(t.s)
+    if #s == 0 then out[#out + 1] = {kind = "g", ctx = "_"} end
+    for _, sid in ipairs(s) do out[#out + 1] = {kind = "g", ctx = sid} end
     for _, x in ipairs(list(t.i)) do out[#out + 1] = {kind = "i", ctx = x} end
-    if #out == 0 then out[1] = {kind = "g", ctx = "_"} end
     return out
-end
-
--- The tag of one membership.
-local function membershipTag(f, u, m, w, d)
-    local t = {tc = 1, f = f, u = u, s = {}, w = w, d = d}
-    if m.kind == "g" then
-        if m.ctx ~= "_" then t.s = {m.ctx} end
-    else
-        t.i, t.k = {m.ctx}, "i"
-    end
-    return t
 end
 
 -- Identity of a model for the duplicate check, like dedupe_key in tools/export.py: the
 -- object's own asset URLs and scale plus all attached parts. Scale to 2 decimals: the catalog
--- rounds transforms, and Pull from catalog compares catalog models with the bags' ones.
+-- rounds transforms.
 local function partKey(d)
     local t = d.Transform or {}
     local sc = string.format("%.2f,%.2f,%.2f", t.scaleX or 1, t.scaleY or 1, t.scaleZ or 1)
@@ -290,6 +235,12 @@ local function saveState()
     self.script_state = onSave()
 end
 
+local function contexts(fe)
+    local out = {{id = "_", name = "Vanilla"}}
+    for _, sf in ipairs(fe.faction.subfactions or {}) do out[#out + 1] = sf end
+    return out
+end
+
 -- The panel's height is the sum of its rows.
 local function buildXml()
     local x, height = {}, 24   -- 24 = top + bottom padding
@@ -307,29 +258,36 @@ local function buildXml()
             .. xmlEscape(fe and fe.faction.name or board.f) .. '</Text>')
         row(66, '<Text preferredHeight="66" fontSize="15" alignment="UpperLeft" color="#BBBBBB">'
             .. 'Drop new models into a cell, move models to retag them, copy a model (Ctrl+C / Ctrl+V) '
-            .. 'to put it in several cells, drop it on Discard to destroy it. Close stores everything.</Text>')
-        row(44, '<Button preferredHeight="44" onClick="ui_close"' .. green .. '>Close board (tag and store)</Button>')
+            .. 'to put it in several cells, drop it on Discard to remove it. Green = new, yellow = moved.</Text>')
+        row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
+            .. '<Button onClick="ui_publish"' .. green .. '>Publish to catalog</Button>'
+            .. '<Button onClick="ui_close">Close board</Button></HorizontalLayout>')
     elseif config then
         local opts = {}
         for _, f in ipairs(config.factions) do
             opts[#opts + 1] = '<Option' .. (f.id == sel.f and ' selected="true"' or '') .. '>' .. xmlEscape(f.name) .. '</Option>'
         end
         row(40, '<Dropdown id="faction" preferredHeight="40" onValueChanged="ui_faction">' .. table.concat(opts) .. '</Dropdown>')
+        local fe = factionIndex[sel.f]
+        if fe then
+            opts = {}
+            for _, c in ipairs(contexts(fe)) do
+                opts[#opts + 1] = '<Option' .. (c.id == sel.focus and ' selected="true"' or '') .. '>Focus: ' .. xmlEscape(c.name) .. '</Option>'
+            end
+            row(40, '<Dropdown id="focus" preferredHeight="40" onValueChanged="ui_focus">' .. table.concat(opts) .. '</Dropdown>')
+        end
         row(44, '<HorizontalLayout preferredHeight="44" spacing="6">'
             .. '<Button onClick="ui_open"' .. green .. '>Open board</Button>'
-            .. '<Button onClick="ui_pull">Pull from catalog</Button></HorizontalLayout>')
+            .. '<Button onClick="ui_reload" fontSize="16">Reload config</Button></HorizontalLayout>')
+    else
+        row(44, '<Button preferredHeight="44" onClick="ui_reload">Reload config</Button>')
     end
 
-    row(36, '<HorizontalLayout preferredHeight="36" spacing="6">'
-        .. (config and '<Button onClick="ui_unsorted" fontSize="16">Check unsorted</Button>' or '')
-        .. (board and '' or '<Button onClick="ui_reload" fontSize="16">Reload config</Button>')
-        .. '</HorizontalLayout>')
-
-    row(160, '<Text preferredHeight="160" fontSize="16" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
+    row(180, '<Text preferredHeight="180" fontSize="16" alignment="UpperLeft">' .. xmlEscape(status) .. '</Text>')
 
     return '<Defaults><Text fontSize="18" color="#FFFFFF"/><Button fontSize="18"/><Dropdown fontSize="18"/></Defaults>'
         .. '<Panel position="0 0 ' .. uiHeight() .. '" rotation="0 0 180" width="520" height="' .. height
-        .. '" scale="' .. UI_SCALE .. ' ' .. UI_SCALE .. ' 1" color="#1A1A1AEE">'
+        .. '" color="#1A1A1AEE">'
         .. '<VerticalLayout padding="12 12 12 12" spacing="6" childForceExpandHeight="false">'
         .. table.concat(x) .. '</VerticalLayout></Panel>'
 end
@@ -345,9 +303,9 @@ function render()   -- assigns the local declared above setStatus
 end
 
 -- ============ JOB QUEUE ============
--- Taking out, storing and spawning run BATCH_SIZE per frame, so a whole faction (hundreds of
--- models) doesn't freeze the game. A job may return a number of frames to wait before the
--- next one (e.g. to let the tiles exist before models drop onto them).
+-- Spawning and destroying run BATCH_SIZE per frame, so a whole faction (hundreds of models)
+-- doesn't freeze the game. A job may return a number of frames to wait before the next one
+-- (e.g. to let the tiles exist before models drop onto them).
 local queue, queueRunning, queueDone = {}, false, nil
 
 local function runQueue()
@@ -381,7 +339,20 @@ local function flushQueue(done)
     Wait.frames(runQueue, 1)
 end
 
--- ============ CONFIG ============
+-- ============ LOADING FROM THE REPO ============
+-- Downloads a file of the local repo and calls done(text), or done(nil, reason).
+local function fetch(path, done)
+    WebRequest.get(REPO .. path .. "?v=" .. os.time(), function(req)
+        if req.is_error or (req.response_code and req.response_code >= 400) or not req.text then
+            done(nil, tostring(req.error or req.response_code))
+        else
+            done(req.text)
+        end
+    end)
+end
+
+local NO_LISTENER = "Start the bridge listener on this PC (python tools/tts_bridge.py listen), then press Reload config."
+
 local function applyConfig(text)
     local ok, data = pcall(JSON.decode, text)
     if not ok or type(data) ~= "table" or type(data.factions) ~= "table" or #data.factions == 0 then
@@ -389,96 +360,56 @@ local function applyConfig(text)
         setStatus("units.json could not be parsed (no factions).")
         return
     end
-
-    config, factionIndex, subOwner = data, {}, {}
-    for fi, f in ipairs(data.factions) do
-        local fe = {faction = f, index = fi, units = {}, unitIndex = {}, subs = {}}
+    config, factionIndex = data, {}
+    for _, f in ipairs(data.factions) do
+        local fe = {faction = f, units = {}}
         f.units = f.units or {}
-        for ui, u in ipairs(f.units) do
-            fe.units[u.id] = u
-            fe.unitIndex[u.id] = ui
-        end
-        for _, s in ipairs(f.subfactions or {}) do
-            fe.subs[s.id] = s
-            subOwner[s.id] = f.id
-        end
+        for _, u in ipairs(f.units) do fe.units[u.id] = u end
         factionIndex[f.id] = fe
     end
-    if not factionIndex[sel.f] then sel.f = data.factions[1].id end
-
-    setStatus("Config loaded: " .. #data.factions .. " faction(s). Choose a faction and open its board.")
+    if not factionIndex[sel.f] then sel.f, sel.focus = data.factions[1].id, "_" end
+    setStatus("Config loaded: " .. #data.factions .. " faction(s). Choose a faction and a focus, then Open board.")
 end
 
 local function loadConfig()
-    if LOCAL_UNITS_JSON then
-        applyConfig(LOCAL_UNITS_JSON)
-        return
-    end
     setStatus("Loading config...")
-    -- raw.githubusercontent.com caches for minutes; the query string busts it.
-    WebRequest.get(UNITS_URL .. "?v=" .. os.time(), function(req)
-        if req.is_error or (req.response_code and req.response_code >= 400) then
+    fetch("config/units.json", function(text, err)
+        if not text then
             config = nil
-            setStatus("Could not load units.json (" .. tostring(req.error or req.response_code) .. ").\n"
-                .. "Push the repo or paste it into LOCAL_UNITS_JSON, then press Reload config.")
+            setStatus("Could not load config/units.json (" .. err .. "). " .. NO_LISTENER)
             return
         end
-        applyConfig(req.text)
+        applyConfig(text)
     end)
 end
 
--- ============ STORAGE BAGS ============
-local function findBag(f, u)
-    local key = f .. "/" .. u
-    local cached = bagGuids[key] and getObjectFromGUID(bagGuids[key])
-    if cached then
-        local m = parseBagMarker(cached.getGMNotes())
-        if m and m.f == f and m.u == u then return cached end
-    end
-    for _, obj in ipairs(getAllObjects()) do
-        local m = parseBagMarker(obj.getGMNotes())
-        if m and m.f == f and m.u == u then
-            bagGuids[key] = obj.getGUID()
-            return obj
+-- A catalog unit file: one model per line, its info as JSON, a tab, its object data as JSON
+-- (see dump_unit in tools/export.py). Only the small info part is decoded (MoonSharp's
+-- JSON.decode is very slow on big text); the object data is spawned as text.
+local function parseUnit(text)
+    local entries, p = {}, 1
+    while p <= #text do
+        local nl = string.find(text, "\n", p, true) or (#text + 1)
+        local tab = string.find(text, "\t", p, true)
+        if tab and tab < nl then
+            local ok, e = pcall(JSON.decode, string.sub(text, p, tab - 1))
+            local json = string.sub(text, tab + 1, nl - 1)
+            if string.sub(json, -1) == "\r" then json = string.sub(json, 1, -2) end
+            if ok and type(e) == "table" then
+                e.json = json
+                entries[#entries + 1] = e
+            end
         end
+        p = nl + 1
     end
-    return nil
-end
-
-local function bagPosition(f, u)
-    local fe = factionIndex[f]
-    local n = (fe.unitIndex[u] or 1) - 1
-    local col, row = n % BAGS_PER_ROW, math.floor(n / BAGS_PER_ROW)
-    local rowsPerFaction = math.ceil(#fe.faction.units / BAGS_PER_ROW) + 1
-    local z = BAG_OFFSET.z + ((fe.index - 1) * rowsPerFaction + row) * BAG_SPACING
-    local pos = toWorld(BAG_OFFSET.x + col * BAG_SPACING, z)
-    pos.y = tableY() + 2
-    return pos
-end
-
-local function ensureBag(f, u, callback)
-    local bag = findBag(f, u)
-    if bag then callback(bag) return end
-    spawnObject({
-        type     = "Bag",
-        position = bagPosition(f, u),
-        rotation = {0, self.getRotation().y, 0},
-        callback_function = function(newBag)
-            local fe = factionIndex[f]
-            newBag.setName("TCM: " .. fe.faction.name .. " / " .. fe.units[u].name)
-            newBag.setGMNotes(JSON.encode({tcbag = 1, f = f, u = u}))
-            newBag.setLock(true)   -- locked bags still accept putObject
-            bagGuids[f .. "/" .. u] = newBag.getGUID()
-            callback(newBag)
-        end,
-    })
+    return entries
 end
 
 -- ============ BOARD GEOMETRY ============
 -- A Mercenaries unit on a faction board (hired mercenary or a unit every warband can get) has
 -- no Vanilla General cell (untagged ones belong to the Mercenaries board). A hired mercenary
 -- also has no cells in the rows of a subfaction whose own `mercenaries` list leaves it out
--- (Trench Ghosts hire none).
+-- (Trench Ghosts hire none). tools/publish.py follows the same rules.
 local function isMercColumn(col) return col.f ~= board.f end
 
 local function cellExists(col, row)
@@ -497,11 +428,8 @@ end
 local function rowFor(col, m)
     local ctx = m.ctx
     if isMercColumn(col) then
-        if m.kind == "g" and ctx == "_" then return nil end
-        if m.kind == "i" then
-            if ctx == "_" then return nil end          -- the Mercenaries board's own pick
-            if ctx == board.f then ctx = "_" end        -- this faction's vanilla pick
-        end
+        if ctx == "_" then return nil end            -- the Mercenaries board's
+        if m.kind == "i" and ctx == board.f then ctx = "_" end   -- this faction's vanilla pick
     end
     return board.rowIndex[m.kind .. ":" .. ctx]
 end
@@ -522,7 +450,7 @@ local function locate(p)
     local x, z = worldToFrame(p)
     local bd = board.bounds
     if x < bd.x0 or x > bd.x1 or z < bd.z0 or z > bd.z1 then return nil end
-    if z >= board.discard.z0 then return "discard" end
+    if z >= board.discard.z0 and z <= board.discard.z1 then return "discard" end
     for c, col in ipairs(board.cols) do
         if x >= col.x0 and x <= col.x1 then
             for r, row in ipairs(board.rows) do
@@ -551,9 +479,10 @@ local function shelve(items, width)
     return z + rowD + CELL_PAD
 end
 
--- Columns and rows of a faction's board, without sizes.
-local function boardSkeleton(fe)
-    local b = {f = fe.faction.id, cols = {}, rows = {}, colIndex = {}, rowIndex = {}}
+-- Columns and rows of a faction's board, without sizes. The focused context's rows come
+-- first (nearest to the player), then Vanilla and the subfactions in config order.
+local function boardSkeleton(fe, focus)
+    local b = {f = fe.faction.id, focus = focus, cols = {}, rows = {}, colIndex = {}, rowIndex = {}}
     local function addCol(f, u, suffix, everyone)
         b.cols[#b.cols + 1] = {f = f, u = u.id, name = u.name .. (suffix or ""), everyone = everyone}
         b.colIndex[f .. "/" .. u.id] = #b.cols
@@ -570,12 +499,14 @@ local function boardSkeleton(fe)
             if u.everyone and not b.colIndex[MERC .. "/" .. u.id] then addCol(MERC, u, nil, true) end
         end
     end
-    local contexts = {{id = "_", name = "Vanilla"}}
-    for _, sf in ipairs(fe.faction.subfactions or {}) do contexts[#contexts + 1] = sf end
-    for _, ctx in ipairs(contexts) do
+    local ordered = {}
+    for _, ctx in ipairs(contexts(fe)) do
+        if ctx.id == focus then table.insert(ordered, 1, ctx) else ordered[#ordered + 1] = ctx end
+    end
+    for _, ctx in ipairs(ordered) do
         for _, kind in ipairs({"g", "i"}) do
             b.rows[#b.rows + 1] = {kind = kind, ctx = ctx.id, name = ctx.name .. (kind == "g" and " - General" or " - Import"),
-                                   mercs = ctx.mercenaries}
+                                   mercs = ctx.mercenaries, focus = ctx.id == focus}
             b.rowIndex[kind .. ":" .. ctx.id] = #b.rows
         end
     end
@@ -601,96 +532,53 @@ local function spawnTile(cx, cz, w, d, color, name)
     })
 end
 
-local function spawnLabel(text, cx, cz)
+-- A flat label; done(obj) gets the text object (cell counts are kept to update them).
+local function spawnLabel(text, cx, cz, fontSize, done)
     spawnObject({
         type     = "3DText",
         position = frameToWorld(cx, cz, board.frame.y + TILE_THICKNESS + 0.05),
         rotation = {LABEL_PITCH, board.frame.yaw + LABEL_YAW, 0},
         callback_function = function(obj)
             obj.TextTool.setValue(text)
-            obj.TextTool.setFontSize(LABEL_FONT)
+            obj.TextTool.setFontSize(fontSize or LABEL_FONT)
             obj.addTag(BOARD_TAG)
+            if done then done(obj) end
         end,
     })
 end
 
--- A model taken out of its bag: it becomes its first cell's membership, every further
--- membership becomes a copy (on this board: in its cell; elsewhere: back into the bag).
-local function onTaken(obj, take)
-    local first = take.places[1]
-    obj.setGMNotes(JSON.encode(membershipTag(take.f, take.u, first.m, take.w, take.d)))
-    obj.highlightOff()
-    for k = 2, #take.places do
-        local p = take.places[k]
-        local d = obj.getData()
-        d.GUID = nil
-        d.GMNotes = JSON.encode(membershipTag(take.f, take.u, p.m, take.w, take.d))
-        spawnObjectData({data = d, position = p.pos, rotation = take.rot})
-    end
-    for _, m in ipairs(take.off) do
-        local d = obj.getData()
-        d.GUID = nil
-        d.GMNotes = JSON.encode(membershipTag(take.f, take.u, m, take.w, take.d))
-        local bp = take.bag.getPosition()
-        spawnObjectData({data = d, position = {bp.x, bp.y + 4, bp.z}, callback_function = function(o)
-            if take.bag ~= nil then take.bag.putObject(o) end
-        end})
-    end
+-- Spawns one catalog entry at pos (its object data as text; the unit file keeps name,
+-- description, tags and tilt beside it) and records the cell it came from.
+local function spawnEntry(e, pos, cellKey)
+    local extra = ',"Nickname":' .. JSON.encode(e.n or "") .. ',"Description":' .. JSON.encode(e.desc or "")
+    if #list(e.t) > 0 then extra = extra .. ',"Tags":' .. JSON.encode(e.t) end   -- an empty table may encode as {}
+    local obj = spawnObjectJSON({json = string.sub(e.json, 1, -2) .. extra .. "}", position = pos,
+                                 rotation = {e.rx or 0, board.frame.yaw + MODEL_YAW, e.rz or 0}})
+    if obj then board.origin[obj.getGUID()] = cellKey end
 end
 
-local function openBoard()
-    if busy or board or not config then return end
-    local fe = factionIndex[sel.f]
-    if not fe then return end
-    clearHighlights()
-    board = boardSkeleton(fe)
-    keyByGuid = {}
+local refreshMarks
 
-    -- Bags of every column, found in one pass.
-    local bags = {}
-    for _, obj in ipairs(getAllObjects()) do
-        local m = parseBagMarker(obj.getGMNotes())
-        if m and m.f and m.u and board.colIndex[m.f .. "/" .. m.u] then bags[m.f .. "/" .. m.u] = obj end
-    end
-
-    -- Plan: which bag entries come out, and into which cells.
-    local cells = {}     -- "c:r" -> items {w, d, place}
-    local takes, untagged, foreign, copies = {}, 0, 0, 0
-    for _, col in ipairs(board.cols) do
-        local bag = bags[col.f .. "/" .. col.u]
-        for _, entry in ipairs(bag and bag.getObjects() or {}) do
-            local tag = parseTag(entry.gm_notes)
-            local c = tag and board.colIndex[tostring(tag.f) .. "/" .. tostring(tag.u)]
-            if not tag then
-                untagged = untagged + 1
-            elseif not c then
-                foreign = foreign + 1   -- tagged for a unit that isn't on this board: stays in the bag
-            else
-                local take = {bag = bag, guid = entry.guid, f = tag.f, u = tag.u, places = {}, off = {},
-                              w = tonumber(tag.w) or DEFAULT_SIZE, d = tonumber(tag.d) or DEFAULT_SIZE}
-                for _, m in ipairs(membershipsOf(tag)) do
-                    local r = rowFor(board.cols[c], m)
-                    if r then
-                        local place = {c = c, r = r, m = m}
-                        take.places[#take.places + 1] = place
-                        local key = c .. ":" .. r
-                        cells[key] = cells[key] or {}
-                        table.insert(cells[key], {w = take.w, d = take.d, place = place})
-                    else
-                        take.off[#take.off + 1] = m
-                    end
-                end
-                if #take.places > 0 then
-                    takes[#takes + 1] = take
-                    copies = copies + #take.places + #take.off - 1
-                end
+-- Lays out the board for the catalog entries {col = c, e} and spawns tiles, labels and models.
+local function buildBoard(fe, entries)
+    -- Plan: which entries go into which cells (one model per membership shown on this board).
+    local cells = {}     -- "c:r" -> items {w, d, e}
+    local placed = 0
+    for _, it in ipairs(entries) do
+        local col = board.cols[it.c]
+        for _, m in ipairs(membershipsOf(it.e)) do
+            local r = rowFor(col, m)
+            if r then
+                local key = it.c .. ":" .. r
+                cells[key] = cells[key] or {}
+                table.insert(cells[key], {w = tonumber(it.e.w) or DEFAULT_SIZE, d = tonumber(it.e.d) or DEFAULT_SIZE, e = it.e})
+                placed = placed + 1
             end
         end
     end
 
     -- Sizes: each column wide enough for its fullest cell at roughly 2:1, each row as deep as
-    -- its deepest cell plus spare room.
-    local totalW = ROW_LABEL_W
+    -- its deepest cell plus spare room (more in the focused rows, where new models go).
     for c, col in ipairs(board.cols) do
         local area, widest = 0, 0
         for r = 1, #board.rows do
@@ -702,7 +590,6 @@ local function openBoard()
             if a > area then area = a end
         end
         col.w = math.max(MIN_COL_W, widest + 2 * CELL_PAD, math.min(MAX_COL_W, math.sqrt(area * 2)))
-        totalW = totalW + CELL_GAP + col.w
     end
     local s = self.getBounds().size
     local half = math.max(s.x, s.z) / 2
@@ -713,12 +600,13 @@ local function openBoard()
         col.x1 = col.x0 + col.w
         x = col.x1
     end
+    local right = x + CELL_GAP + ROW_LABEL_W
     local z0 = -half
     local z = z0 + HEADER_D
     for r, row in ipairs(board.rows) do
         local depth = MIN_ROW_D
         for c, col in ipairs(board.cols) do
-            local used = shelve(cells[c .. ":" .. r] or {}, col.w) + SPARE_D
+            local used = shelve(cells[c .. ":" .. r] or {}, col.w) + (row.focus and FOCUS_SPARE or SPARE_D)
             if used > depth then depth = used end
         end
         row.z0 = z + CELL_GAP
@@ -726,406 +614,365 @@ local function openBoard()
         z = row.z1
     end
     board.discard = {z0 = z + CELL_GAP * 2, z1 = z + CELL_GAP * 2 + DISCARD_D}
-    board.bounds = {x0 = left, x1 = x, z0 = z0, z1 = board.discard.z1}
+    local farHeader = board.discard.z1 + CELL_GAP
+    board.bounds = {x0 = left, x1 = right, z0 = z0, z1 = farHeader + HEADER_D}
 
-    local rot = self.getRotation()
-    local pos = self.getPosition()
+    local rot, pos = self.getRotation(), self.getPosition()
     board.frame = {x = pos.x, y = tableY(), z = pos.z, yaw = rot.y}
-    local modelRot = {0, rot.y + MODEL_YAW, 0}
-    for key, items in pairs(cells) do
-        local sep = string.find(key, ":", 1, true)
-        local col, row = board.cols[tonumber(string.sub(key, 1, sep - 1))], board.rows[tonumber(string.sub(key, sep + 1))]
-        for _, it in ipairs(items) do
-            it.place.pos = frameToWorld(col.x0 + it.x, row.z0 + it.z, board.frame.y + TILE_THICKNESS + 0.4)
-        end
-    end
-    busy = true
+    board.origin, board.counts = {}, {}
     saveState()
-    setStatus("Opening the " .. fe.faction.name .. " board...")
 
     -- Tiles and labels first, then the models.
-    queue[#queue + 1] = function()
-        local bd = board.bounds
-        spawnTile((bd.x0 + bd.x1) / 2, z0 + HEADER_D / 2, bd.x1 - bd.x0, HEADER_D, COLOR_HEADER, "Board header")
-        for _, col in ipairs(board.cols) do
-            spawnLabel(wrapWords(col.name, 16), (col.x0 + col.x1) / 2, z0 + HEADER_D / 2)
+    local bd = board.bounds
+    local midX = (left + right) / 2
+    for _, hz in ipairs({z0 + HEADER_D / 2, farHeader + HEADER_D / 2}) do
+        queue[#queue + 1] = function()
+            spawnTile(midX, hz, right - left, HEADER_D, COLOR_HEADER, "Board header")
+            for _, col in ipairs(board.cols) do
+                spawnLabel(wrapWords(col.name, 16), (col.x0 + col.x1) / 2, hz)
+            end
         end
     end
-    for _, row in ipairs(board.rows) do
+    for r, row in ipairs(board.rows) do
         queue[#queue + 1] = function()
-            spawnLabel(wrapWords(row.name, 18), left + ROW_LABEL_W / 2, (row.z0 + row.z1) / 2)
-            for _, col in ipairs(board.cols) do
+            local name = wrapWords(row.name, 18)
+            spawnLabel(name, left + ROW_LABEL_W / 2, (row.z0 + row.z1) / 2)
+            spawnLabel(name, right - ROW_LABEL_W / 2, (row.z0 + row.z1) / 2)
+            for c, col in ipairs(board.cols) do
                 if cellExists(col, row) then
-                    spawnTile((col.x0 + col.x1) / 2, (row.z0 + row.z1) / 2, col.w, row.z1 - row.z0,
-                        row.kind == "i" and COLOR_IMPORT or COLOR_GENERAL, col.name .. " / " .. row.name)
+                    local color = row.kind == "i" and (row.focus and COLOR_FOCUS_I or COLOR_IMPORT)
+                        or (row.focus and COLOR_FOCUS or COLOR_GENERAL)
+                    spawnTile((col.x0 + col.x1) / 2, (row.z0 + row.z1) / 2, col.w, row.z1 - row.z0, color,
+                        col.name .. " / " .. row.name)
+                    -- Model count in the cell's far-right corner (models fill it from the near left).
+                    local key = c .. ":" .. r
+                    spawnLabel("0", col.x1 - 0.5, row.z1 - 0.4, COUNT_FONT, function(o) board.counts[key] = o.getGUID() end)
                 end
             end
         end
     end
     queue[#queue + 1] = function()
-        local bd = board.bounds
-        spawnTile((bd.x0 + bd.x1) / 2, (board.discard.z0 + board.discard.z1) / 2, bd.x1 - bd.x0, DISCARD_D,
-            COLOR_DISCARD, "Discard")
-        spawnLabel("DISCARD - destroyed on Close", (bd.x0 + bd.x1) / 2, (board.discard.z0 + board.discard.z1) / 2)
+        spawnTile(midX, (board.discard.z0 + board.discard.z1) / 2, right - left, DISCARD_D, COLOR_DISCARD, "Discard")
+        spawnLabel("DISCARD - removed from the catalog on Publish", midX, (board.discard.z0 + board.discard.z1) / 2)
         return 10   -- let the tiles exist and be scaled before models drop onto them
     end
-    for _, take in ipairs(takes) do
-        take.rot = modelRot
-        queue[#queue + 1] = function()
-            if take.bag == nil then return end
-            take.bag.takeObject({guid = take.guid, position = take.places[1].pos, rotation = modelRot, smooth = false,
-                callback_function = function(obj) pcall(onTaken, obj, take) end})
+    local yLift = board.frame.y + TILE_THICKNESS + 0.4
+    for key, items in pairs(cells) do
+        local sep = string.find(key, ":", 1, true)
+        local col, row = board.cols[tonumber(string.sub(key, 1, sep - 1))], board.rows[tonumber(string.sub(key, sep + 1))]
+        for _, it in ipairs(items) do
+            local p = frameToWorld(col.x0 + it.x, row.z0 + it.z, yLift)
+            queue[#queue + 1] = function() spawnEntry(it.e, p, key) end
         end
     end
     flushQueue(function()
         busy = false
-        local lines = {"Board open: " .. #takes .. " model(s) taken out."}
-        if copies > 0 then lines[#lines + 1] = copies .. " copies made from models with several tags." end
-        if untagged > 0 then lines[#lines + 1] = untagged .. " untagged object(s) left in the bags (Check unsorted)." end
-        if foreign > 0 then lines[#lines + 1] = foreign .. " model(s) in these bags are tagged for other units and stayed there." end
-        setStatus(table.concat(lines, "\n"))
+        saveState()
+        setStatus("Board open: " .. placed .. " model(s) in their cells (" .. fe.faction.name .. ").")
+        Wait.time(function() refreshMarks() end, 2)   -- counts once the models have landed
     end)
 end
 
--- ============ DROP FEEDBACK ============
--- After a drop: which cell the model is in, how many models that cell holds, and whether the
--- same model (same assets and scale, see modelKey) is already on the board. Red = already in
--- this cell (a real duplicate), yellow = in other cells (often an intended copy).
+local function openBoard()
+    if busy or board or not config then return end
+    local fe = factionIndex[sel.f]
+    if not fe then return end
+    clearHighlights()
+    board = boardSkeleton(fe, sel.focus)
+    keyByGuid = {}
+    busy = true
+    setStatus("Opening the " .. fe.faction.name .. " board...")
+    fetch("catalog/index.json", function(text, err)
+        local ok, index = pcall(JSON.decode, text or "")
+        if not text or not ok or type(index) ~= "table" then
+            board, busy = nil, false
+            setStatus("Could not load catalog/index.json (" .. tostring(err or "bad JSON") .. "). " .. NO_LISTENER)
+            return
+        end
+        local files = {}   -- column index -> unit file
+        for _, f in ipairs(index.factions or {}) do
+            for _, u in ipairs(f.units or {}) do
+                local c = board.colIndex[f.id .. "/" .. u.id]
+                if c then files[#files + 1] = {c = c, file = u.file} end
+            end
+        end
+        local entries, i = {}, 0
+        local function nextFile()
+            i = i + 1
+            local job = files[i]
+            if not job then
+                buildBoard(fe, entries)
+                return
+            end
+            fetch("catalog/" .. job.file, function(t)
+                for _, e in ipairs(parseUnit(t or "")) do entries[#entries + 1] = {c = job.c, e = e} end
+                nextFile()
+            end)
+        end
+        nextFile()
+    end)
+end
+
+-- ============ MARKS, COUNTS AND DROP FEEDBACK ============
+-- Every model on the board: where it lies, and whether it is new (not there when the board
+-- opened), moved (another cell) or a duplicate (the same model, see modelKey, twice in one
+-- cell). Outlines: green new, yellow moved, red duplicate / on Discard / outside any cell.
+-- Also updates the cell counts. Returns the per-unit changes for the Publish report.
+local function survey()
+    local seen, perCell, byCellKey, models = {}, {}, {}, {}
+    for _, obj in ipairs(getAllObjects()) do
+        if isModel(obj) then
+            local where, c, r = locate(obj.getPosition())
+            if where then
+                local m = {obj = obj, where = where, c = c, r = r, guid = obj.getGUID()}
+                models[#models + 1] = m
+                if where == "cell" then
+                    local key = c .. ":" .. r
+                    perCell[key] = (perCell[key] or 0) + 1
+                    local dk = key .. "|" .. keyOf(obj)
+                    m.dup = byCellKey[dk] ~= nil
+                    byCellKey[dk] = true
+                end
+                seen[m.guid] = true
+            end
+        end
+    end
+    local changes = {}   -- column name -> {new, moved, removed}
+    local function bump(c, what)
+        local name = board.cols[c].name
+        changes[name] = changes[name] or {new = 0, moved = 0, removed = 0}
+        changes[name][what] = changes[name][what] + 1
+    end
+    clearHighlights()
+    for _, m in ipairs(models) do
+        local from = board.origin[m.guid]
+        if m.where ~= "cell" then
+            highlight(m.obj, COLOR_BAD)
+            if from and m.where == "discard" then bump(tonumber(string.sub(from, 1, string.find(from, ":", 1, true) - 1)), "removed") end
+        elseif m.dup then
+            highlight(m.obj, COLOR_BAD)
+        elseif not from then
+            highlight(m.obj, COLOR_NEW)
+            bump(m.c, "new")
+        elseif from ~= m.c .. ":" .. m.r then
+            highlight(m.obj, COLOR_MOVED)
+            bump(m.c, "moved")
+        end
+    end
+    -- Models that were on the board and are gone (deleted) count as removed.
+    for guid, from in pairs(board.origin) do
+        if not seen[guid] then bump(tonumber(string.sub(from, 1, string.find(from, ":", 1, true) - 1)), "removed") end
+    end
+    for key, guid in pairs(board.counts or {}) do
+        local label = getObjectFromGUID(guid)
+        if label then label.TextTool.setValue(tostring(perCell[key] or 0)) end
+    end
+    return models, changes
+end
+
+function refreshMarks()   -- assigns the local declared above buildBoard
+    if board and not busy then survey() end
+end
+
+local function changeLines(changes)
+    local lines = {}
+    for _, col in ipairs(board.cols) do
+        local ch = changes[col.name]
+        if ch then
+            local parts = {}
+            if ch.new > 0 then parts[#parts + 1] = "+" .. ch.new .. " new" end
+            if ch.moved > 0 then parts[#parts + 1] = ch.moved .. " moved" end
+            if ch.removed > 0 then parts[#parts + 1] = ch.removed .. " removed" end
+            lines[#lines + 1] = col.name .. ": " .. table.concat(parts, ", ")
+        end
+    end
+    return lines
+end
+
+-- After a drop: the dropped models' cells and counts, then all marks.
 local function checkDrops()
     local drops = pendingDrops
     pendingDrops = {}
     if not board or busy then return end
-
-    local byKey, perCell = {}, {}
-    for _, obj in ipairs(getAllObjects()) do
-        if isModel(obj) then
-            local where, c, r = locate(obj.getPosition())
-            if where == "cell" then
-                local k = keyOf(obj)
-                byKey[k] = byKey[k] or {}
-                table.insert(byKey[k], {obj = obj, c = c, r = r})
-                perCell[c .. ":" .. r] = (perCell[c .. ":" .. r] or 0) + 1
-            end
-        end
-    end
-
-    clearHighlights()
+    local models = survey()
     local lines = {}
     for _, obj in ipairs(drops) do
         if obj ~= nil then
             local where, c, r = locate(obj.getPosition())
             if where == "discard" then
-                highlight(obj, COLOR_BAD)
-                lines[#lines + 1] = "On Discard: destroyed when the board closes."
+                lines[#lines + 1] = "On Discard: removed from the catalog on Publish."
             elseif where == "board" then
-                highlight(obj, COLOR_BAD)
                 lines[#lines + 1] = "Not in a cell: move it into one."
             elseif where == "cell" then
-                local same, other = false, {}
-                for _, hit in ipairs(byKey[keyOf(obj)] or {}) do
-                    if hit.obj ~= obj then
-                        if hit.c == c and hit.r == r then same = true
-                        else other[#other + 1] = cellName(hit.c, hit.r) end
+                local others = {}
+                local k = keyOf(obj)
+                for _, m in ipairs(models) do
+                    if m.obj ~= obj and m.where == "cell" and (m.c ~= c or m.r ~= r) and keyOf(m.obj) == k then
+                        others[#others + 1] = cellName(m.c, m.r)
                     end
                 end
-                local line = cellName(c, r) .. ": " .. (perCell[c .. ":" .. r] or 0) .. " model(s)."
-                if same then
-                    highlight(obj, COLOR_BAD)
-                    line = line .. " DUPLICATE: this model is already in this cell."
-                elseif #other > 0 then
-                    highlight(obj, COLOR_WARN)
-                    line = line .. " Also in: " .. table.concat(other, ", ", 1, math.min(#other, 3))
-                        .. (#other > 3 and ", ..." or "")
-                else
-                    highlight(obj, COLOR_OK)
+                local line = cellName(c, r)
+                for _, m in ipairs(models) do
+                    if m.obj == obj and m.dup then line = line .. ": DUPLICATE, this model is already in this cell." end
+                end
+                if #others > 0 then
+                    line = line .. " (also in " .. table.concat(others, ", ", 1, math.min(#others, 3)) .. (#others > 3 and ", ..." or "") .. ")"
                 end
                 lines[#lines + 1] = line
             end
         end
     end
-    if #lines > 0 then
-        if #lines > 6 then
-            local n = #lines
-            lines = {lines[1], lines[2], lines[3], lines[4], lines[5], "... and " .. (n - 5) .. " more"}
-        end
-        setStatus(table.concat(lines, "\n"))
+    if #lines > 6 then
+        local n = #lines
+        lines = {lines[1], lines[2], lines[3], lines[4], lines[5], "... and " .. (n - 5) .. " more"}
     end
+    if #lines > 0 then setStatus(table.concat(lines, "\n")) end
+end
+
+-- ============ PUBLISH ============
+-- Sends every model lying in a cell to the bridge listener, one message per column (keeps
+-- each message small), which writes catalog/ with tools/publish.py and calls publishDone.
+-- Refused while models lie on the board outside any cell, or a cell holds a duplicate.
+local function publishBoard()
+    if busy or not board then return end
+    local models, changes = survey()
+    local stray, dups = 0, 0
+    for _, m in ipairs(models) do
+        if m.where == "board" then stray = stray + 1 end
+        if m.dup then dups = dups + 1 end
+    end
+    if stray > 0 or dups > 0 then
+        setStatus((stray > 0 and (stray .. " model(s) lie outside any cell") or "")
+            .. (stray > 0 and dups > 0 and " and " or "")
+            .. (dups > 0 and (dups .. " duplicate(s) share a cell") or "")
+            .. " (red). Fix them, then Publish again.")
+        return
+    end
+    local byCol = {}
+    for _, m in ipairs(models) do
+        if m.where == "cell" then
+            local col, row = board.cols[m.c], board.rows[m.r]
+            local mem = cellMembership(col, row)
+            -- Bounds are not in the save JSON; the spawner needs the footprint before models load.
+            local size = m.obj.getBounds().size
+            byCol[m.c] = byCol[m.c] or {}
+            -- The object's JSON goes in as it is (it already is JSON), so nothing big is encoded.
+            table.insert(byCol[m.c], '{"f":' .. JSON.encode(col.f) .. ',"u":' .. JSON.encode(col.u)
+                .. ',"kind":' .. JSON.encode(mem.kind) .. ',"ctx":' .. JSON.encode(mem.ctx)
+                .. ',"w":' .. round(size.x, 2) .. ',"d":' .. round(size.z, 2) .. ',"data":' .. m.obj.getJSON() .. '}')
+        end
+    end
+    -- sendExternalMessage silently drops messages with nested tables (even a list of strings;
+    -- tested), so each part's models travel as one JSON text field.
+    local parts = {}
+    for c = 1, #board.cols do parts[#parts + 1] = "[" .. table.concat(byCol[c] or {}, ",") .. "]" end
+    busy = true
+    publishId = tostring(os.time()) .. tostring(math.random(1000, 9999))
+    local id, guid = publishId, self.getGUID()
+    local report = changeLines(changes)
+    publishLines = report
+    local fname = factionIndex[board.f] and factionIndex[board.f].faction.name or board.f
+    setStatus("Publishing the " .. fname .. " board...\n"
+        .. (#report > 0 and table.concat(report, "\n") or "No changes on the board."))
+    for k, models in ipairs(parts) do
+        queue[#queue + 1] = function()
+            sendExternalMessage({tcm = "publish", id = id, part = k, parts = #parts, board = board.f, guid = guid, models = models})
+            return 2
+        end
+    end   -- models: JSON text, see above
+    flushQueue(nil)
+    Wait.time(function()
+        if publishId == id then
+            publishId, busy = nil, false
+            setStatus("No answer from the bridge listener after " .. PUBLISH_TIMEOUT .. " s. " .. NO_LISTENER
+                .. " The board is unchanged; Publish again.")
+        end
+    end, PUBLISH_TIMEOUT)
+end
+
+-- Called by the bridge listener with the report (a JSON list of lines). The board now matches
+-- the catalog: models on Discard go, and every model's current cell becomes its origin.
+function publishDone(reportJson)
+    if not board then return end
+    local ok, report = pcall(JSON.decode, reportJson)
+    publishId = nil
+    local failed = ok and type(report) == "table" and string.find(tostring(report[1]), "FAILED", 1, true)
+    if not failed then
+        for _, obj in ipairs(getAllObjects()) do
+            if isModel(obj) then
+                local where, c, r = locate(obj.getPosition())
+                if where == "discard" then
+                    obj.destruct()
+                elseif where == "cell" then
+                    board.origin[obj.getGUID()] = c .. ":" .. r
+                end
+            end
+        end
+        -- Gone objects drop out of the origin list.
+        for guid in pairs(board.origin) do
+            if not getObjectFromGUID(guid) then board.origin[guid] = nil end
+        end
+        saveState()
+    end
+    busy = false
+    local text = ok and type(report) == "table" and table.concat(report, "\n") or tostring(reportJson)
+    if #publishLines > 0 then text = table.concat(publishLines, "\n") .. "\n" .. text end
+    setStatus(text)
+    Wait.frames(function() refreshMarks() end, 5)
 end
 
 -- ============ CLOSE BOARD ============
-local function storeTag(obj, col, row)
-    -- Bounds are not in the save JSON; the spawner needs the footprint before models load.
-    local size = obj.getBounds().size
-    local tag = membershipTag(col.f, col.u, cellMembership(col, row), round(size.x, 2), round(size.z, 2))
-    obj.setGMNotes(JSON.encode(tag))
-    -- Only the stored script changes here; the running copy dies when the object enters the bag.
-    obj.setLuaScript("")
-    obj.script_state = ""
-    obj.clearButtons()
-    obj.clearInputs()
-    obj.UI.setXml("")
-    obj.highlightOff()
-end
-
+-- Removes the board and every model on it (they are copies of the catalog). With unpublished
+-- changes the first press only warns; a second press within 6 s discards them.
 local function closeBoard()
     if busy or not board then return end
-    clearHighlights()
-
-    local stores, discards, stray = {}, {}, 0
-    for _, obj in ipairs(getAllObjects()) do
-        if isModel(obj) then
-            local where, c, r = locate(obj.getPosition())
-            if where == "cell" then
-                stores[#stores + 1] = {obj = obj, col = board.cols[c], row = board.rows[r]}
-            elseif where == "discard" then
-                discards[#discards + 1] = obj
-            elseif where == "board" then
-                stray = stray + 1
-                highlight(obj, COLOR_BAD)
-            end
-        end
-    end
-    if stray > 0 then
-        setStatus(stray .. " model(s) lie on the board outside any cell (red). Move them into a cell "
-            .. "or onto Discard, then close again.")
+    local models, changes = survey()
+    local pending = changeLines(changes)
+    if #pending > 0 and os.time() > closeArmed then
+        closeArmed = os.time() + 6
+        setStatus("Unpublished changes:\n" .. table.concat(pending, "\n") .. "\nPress Close again within 6 s to discard them, or Publish first.")
         return
     end
-
     busy = true
-    setStatus("Storing " .. #stores .. " model(s)...")
-    -- Bags first (creating a missing one is asynchronous), one after another.
-    local order, seen, bagOf = {}, {}, {}
-    for _, st in ipairs(stores) do
-        local key = st.col.f .. "/" .. st.col.u
-        if not seen[key] then
-            seen[key] = true
-            order[#order + 1] = st.col
-        end
-    end
-    local i = 0
-    local function nextBag()
-        i = i + 1
-        local col = order[i]
-        if col then
-            ensureBag(col.f, col.u, function(bag)
-                bagOf[col.f .. "/" .. col.u] = bag
-                nextBag()
-            end)
-            return
-        end
-        for _, st in ipairs(stores) do
-            queue[#queue + 1] = function()
-                if st.obj == nil then return end
-                storeTag(st.obj, st.col, st.row)
-                bagOf[st.col.f .. "/" .. st.col.u].putObject(st.obj)
-            end
-        end
-        for _, obj in ipairs(discards) do
-            queue[#queue + 1] = function() if obj ~= nil then obj.destruct() end end
-        end
-        for _, obj in ipairs(getAllObjects()) do
-            if obj.hasTag(BOARD_TAG) then queue[#queue + 1] = function() if obj ~= nil then obj.destruct() end end end
-        end
-        flushQueue(function()
-            busy = false
-            local name = factionIndex[board.f] and factionIndex[board.f].faction.name or board.f
-            board, keyByGuid = nil, {}
-            saveState()
-            setStatus("Board closed: " .. #stores .. " model(s) tagged and stored in " .. #order .. " bag(s)"
-                .. (#discards > 0 and (", " .. #discards .. " destroyed") or "") .. " (" .. name .. ").")
-        end)
-    end
-    nextBag()
-end
-
--- ============ PULL FROM CATALOG ============
--- Brings the bags up to date with the published catalog: every catalog model of the chosen
--- faction's board columns (its units, hired mercenaries, Golem) that no bag holds yet is
--- spawned with a tag rebuilt from its catalog entry (s may contain "_" = vanilla too; the
--- board splits such tags into one copy per cell when it opens) and put into its unit bag.
--- Only adds, never removes or retags: models in the bags win, so new models that aren't
--- exported yet are safe. A model discarded here but not yet exported comes back, so export
--- before pulling. Manual (a button), not on load, for the same reason.
-local function fetchJson(url, callback)
-    WebRequest.get(url, function(req)
-        if req.is_error or (req.response_code and req.response_code >= 400) then
-            callback(nil, tostring(req.error or req.response_code))
-            return
-        end
-        local ok, data = pcall(JSON.decode, req.text)
-        if not ok or type(data) ~= "table" then callback(nil, "bad JSON") return end
-        callback(data)
-    end)
-end
-
--- A catalog unit file: one model per line, its info as JSON, a tab, its object data as JSON
--- (see dump_unit in tools/export.py). Each line is decoded on its own (decoding a whole big
--- file at once is very slow in MoonSharp), and the fields the file keeps beside the data
--- (Nickname, Description, Tags, tilt) are put back into it. Returns {s, i, w, d, data} entries.
-local function fetchUnitFile(url, callback)
-    WebRequest.get(url, function(req)
-        if req.is_error or (req.response_code and req.response_code >= 400) then
-            callback(nil, tostring(req.error or req.response_code))
-            return
-        end
-        local text, entries, p = req.text or "", {}, 1
-        while p <= #text do
-            local nl = string.find(text, "\n", p, true) or (#text + 1)
-            local tab = string.find(text, "\t", p, true)
-            if tab and tab < nl then
-                local ok1, e = pcall(JSON.decode, string.sub(text, p, tab - 1))
-                local ok2, data = pcall(JSON.decode, string.sub(text, tab + 1, nl - 1))
-                if ok1 and ok2 and type(e) == "table" and type(data) == "table" then
-                    data.Nickname, data.Description, data.Tags = e.n, e.desc, e.t
-                    data.Transform = data.Transform or {}
-                    data.Transform.rotX, data.Transform.rotZ = e.rx or data.Transform.rotX, e.rz or data.Transform.rotZ
-                    e.data = data
-                    entries[#entries + 1] = e
-                end
-            end
-            p = nl + 1
-        end
-        callback(entries)
-    end)
-end
-
-local function pullCatalog()
-    if busy or board or not config then return end
-    local fe = factionIndex[sel.f]
-    if not fe then return end
-    local cols = boardSkeleton(fe).cols
-    busy = true
-    setStatus("Pulling " .. fe.faction.name .. " from the catalog...")
-    local function fail(what, err)
-        busy = false
-        setStatus("Pull from catalog failed: " .. what .. " (" .. tostring(err) .. ").")
-    end
-
-    fetchJson(RAW_BASE .. "catalog/version.json?v=" .. os.time(), function(v, err)
-        if not v then fail("version.json", err) return end
-        local version = tostring(v.catalog)
-        fetchJson(RAW_BASE .. "catalog/index.json?v=" .. version, function(index, err2)
-            if not index then fail("index.json", err2) return end
-            local files = {}   -- "f/u" -> unit file
-            for _, f in ipairs(index.factions or {}) do
-                for _, u in ipairs(f.units or {}) do files[f.id .. "/" .. u.id] = u.file end
-            end
-            local added, present, bagsTouched, i = 0, 0, 0, 0
-            local function nextCol()
-                i = i + 1
-                local col = cols[i]
-                if not col then
-                    flushQueue(function()
-                        busy = false
-                        setStatus("Pulled " .. added .. " model(s) from catalog " .. version .. " into " .. bagsTouched
-                            .. " bag(s); " .. present .. " were already in the bags.")
-                    end)
-                    return
-                end
-                local file = files[col.f .. "/" .. col.u]
-                if not file then nextCol() return end
-                fetchUnitFile(RAW_BASE .. "catalog/" .. file .. "?v=" .. version, function(entries, err3)
-                    if not entries then fail(file, err3) return end
-                    -- Models this unit's bag already holds.
-                    local have = {}
-                    local bag = findBag(col.f, col.u)
-                    if bag then
-                        for _, d in ipairs(bag.getData().ContainedObjects or {}) do have[modelKey(d)] = true end
-                    end
-                    local missing = {}
-                    for _, e in ipairs(entries) do
-                        if type(e.data) == "table" and have[modelKey(e.data)] then
-                            present = present + 1
-                        elseif type(e.data) == "table" then
-                            missing[#missing + 1] = e
-                        end
-                    end
-                    if #missing == 0 then nextCol() return end
-                    ensureBag(col.f, col.u, function(target)
-                        bagsTouched = bagsTouched + 1
-                        local bp = target.getPosition()
-                        for _, e in ipairs(missing) do
-                            queue[#queue + 1] = function()
-                                local tag = {tc = 1, f = col.f, u = col.u, s = list(e.s), w = e.w, d = e.d}
-                                if e.i and #list(e.i) > 0 then tag.i = list(e.i) end
-                                e.data.GMNotes = JSON.encode(tag)
-                                spawnObjectData({data = e.data, position = {bp.x, bp.y + 4, bp.z},
-                                    callback_function = function(o) if target ~= nil then target.putObject(o) end end})
-                                added = added + 1
-                            end
-                        end
-                        flushQueue(nil)
-                        nextCol()
-                    end)
-                end)
-            end
-            nextCol()
-        end)
-    end)
-end
-
--- ============ UNSORTED CHECK ============
--- Loose models (off the board) without a valid tag, and bag contents whose tag is missing,
--- invalid or for a different unit than the bag.
-local function checkUnsorted()
-    if not config or busy then return end
     clearHighlights()
-
-    local loose, problems = 0, {}
+    for _, m in ipairs(models) do
+        queue[#queue + 1] = function() if m.obj ~= nil then m.obj.destruct() end end
+    end
     for _, obj in ipairs(getAllObjects()) do
-        if isModel(obj) and not (board and locate(obj.getPosition())) then
-            local t = parseTag(obj.getGMNotes())
-            if not t or not tagValid(t) then
-                loose = loose + 1
-                highlight(obj, COLOR_BAD)
-            end
-        else
-            local m = parseBagMarker(obj.getGMNotes())
-            if m then
-                local untagged, wrong = 0, 0
-                for _, entry in ipairs(obj.getObjects()) do
-                    local t = parseTag(entry.gm_notes)
-                    if not t or not tagValid(t) then
-                        untagged = untagged + 1
-                    elseif t.f ~= m.f or t.u ~= m.u then
-                        wrong = wrong + 1
-                    end
-                end
-                if untagged + wrong > 0 then
-                    problems[#problems + 1] = obj.getName() .. ": " .. untagged .. " untagged/invalid, " .. wrong .. " wrong unit"
-                end
-            end
-        end
+        if obj.hasTag(BOARD_TAG) then queue[#queue + 1] = function() if obj ~= nil then obj.destruct() end end end
     end
-
-    local lines = {"Loose untagged models off the board: " .. loose .. (loose > 0 and " (highlighted red)" or "")}
-    if #problems == 0 then
-        lines[#lines + 1] = "All storage bags OK."
-    else
-        for i, p in ipairs(problems) do
-            if i > 8 then lines[#lines + 1] = "..." break end
-            lines[#lines + 1] = p
-        end
-    end
-    setStatus(table.concat(lines, "\n"))
+    flushQueue(function()
+        busy = false
+        board, keyByGuid = nil, {}
+        saveState()
+        setStatus("Board closed.")
+    end)
 end
 
 -- ============ UI CALLBACKS ============
 -- XML UI passes (player, value, id). Dropdown value is the selected option's text.
 function ui_faction(player, value)
     for _, f in ipairs(config.factions) do
-        if f.name == value then
-            sel.f = f.id
+        if f.name == value and f.id ~= sel.f then
+            sel.f, sel.focus = f.id, "_"
             saveState()
+            render()
             break
         end
     end
 end
 
+function ui_focus(player, value)
+    local fe = factionIndex[sel.f]
+    for _, c in ipairs(fe and contexts(fe) or {}) do
+        if "Focus: " .. c.name == value then sel.focus = c.id end
+    end
+    saveState()
+end
+
 function ui_open() openBoard() end
-function ui_pull() pullCatalog() end
+function ui_publish() publishBoard() end
 function ui_close() closeBoard() end
-function ui_unsorted() checkUnsorted() end
 function ui_reload() if not board then loadConfig() end end
 
 -- ============ EVENTS ============
@@ -1141,21 +988,31 @@ function onObjectDrop(player_color, obj)
     end, 0.5)
 end
 
+-- Deleting a model also changes the board (it counts as removed).
+function onObjectDestroy(obj)
+    if busy or not board or not isModel(obj) then return end
+    dropToken = dropToken + 1
+    local token = dropToken
+    Wait.time(function()
+        if token == dropToken then refreshMarks() end
+    end, 0.5)
+end
+
 function onSave()
-    return JSON.encode({f = sel.f, board = board})
+    return JSON.encode({f = sel.f, focus = sel.focus, board = board})
 end
 
 function onLoad(saved_data)
     if saved_data and saved_data ~= "" then
         local ok, data = pcall(JSON.decode, saved_data)
         if ok and type(data) == "table" then
-            sel.f = data.f or (data.sel and data.sel.f)   -- data.sel: older intake versions
+            sel.f, sel.focus = data.f, data.focus or "_"
             -- An open board's tiles and models were saved with the game; only its geometry
-            -- needs restoring.
-            if type(data.board) == "table" and data.board.frame then board = data.board end
+            -- and origins need restoring.
+            if type(data.board) == "table" and data.board.frame and data.board.origin then board = data.board end
         end
     end
-    self.setVectorLines({})   -- older versions outlined an intake zone
     render()
     loadConfig()
+    if board then Wait.time(function() refreshMarks() end, 3) end
 end

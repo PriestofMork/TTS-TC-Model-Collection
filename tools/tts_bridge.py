@@ -3,7 +3,12 @@
     python tools/tts_bridge.py listen [--log tts.log]
         Receives everything TTS sends to an "external editor" on port 39998 (print output,
         Lua errors, return values of `run`, game saved, ...) and appends it to the log file
-        as one JSON object per line. Keep it running in the background.
+        as one JSON object per line. Keep it running in the background. It also
+          - serves this repo folder on http://127.0.0.1:8765, so the intake's sorting board
+            reads the local catalog (TTS can download from a local http address), and
+          - publishes boards: the intake sends a board in parts (sendExternalMessage,
+            {"tcm": "publish", ...}); once all parts are in, tools/publish.py writes catalog/
+            and the report is shown in the intake (publishDone).
 
     python tools/tts_bridge.py run "<lua code>" [--guid -1] [--log tts.log] [--wait 5]
         Sends Lua code to TTS (port 39999) to run inside the game, then prints whatever the
@@ -27,7 +32,10 @@ connection, replies arrive on a new connection to port 39998.
 """
 
 import argparse
+import functools
+import http.server
 import json
+import threading
 import socket
 import sys
 import time
@@ -36,7 +44,67 @@ from pathlib import Path
 
 TTS_PORT = 39999      # TTS listens here
 EDITOR_PORT = 39998   # TTS sends to the "editor" here
-DEFAULT_LOG = Path(__file__).resolve().parent.parent / "tts.log"
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_LOG = ROOT / "tts.log"
+HTTP_PORT = 8765      # the repo folder, for the intake
+
+
+class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+def serve_repo():
+    """Serves the repo folder in the background; False if the port is taken (e.g. a test)."""
+    try:
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", HTTP_PORT),
+                                                 functools.partial(QuietHandler, directory=str(ROOT)))
+    except OSError:
+        return False
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return True
+
+
+def send_lua(guid, code):
+    """Runs Lua inside an object in the game (no result is awaited)."""
+    with socket.create_connection(("127.0.0.1", TTS_PORT), timeout=5) as s:
+        s.sendall(json.dumps({"messageID": 3, "guid": guid, "script": code}).encode("utf-8"))
+
+
+publishes = {}   # publish id -> {"parts": {n: models}, "of": total}
+
+
+def handle_publish(msg):
+    """One part of a board sent by the intake. When all parts are in, publish in a thread
+    (writing the catalog takes a few seconds) and send the report back to the intake."""
+    pid = msg.get("id")
+    entry = publishes.setdefault(pid, {"parts": {}, "of": msg.get("parts", 1)})
+    # The models arrive as JSON text: sendExternalMessage drops messages with nested tables.
+    try:
+        part = json.loads(msg.get("models") or "[]")
+    except ValueError as err:
+        print(f"publish part {msg.get('part')} unreadable: {err}", flush=True)
+        part = []
+    entry["parts"][msg.get("part", 1)] = part
+    if len(entry["parts"]) < entry["of"]:
+        return
+    publishes.pop(pid, None)
+    models = [m for k in sorted(entry["parts"]) for m in entry["parts"][k]]
+
+    def run_publish():
+        try:
+            import publish   # tools/publish.py (this folder is on sys.path)
+            report = publish.publish(msg["board"], models)
+        except Exception as err:   # noqa: BLE001 - any failure goes back to the intake
+            report = [f"Publish FAILED: {err!r}. Nothing or only part was written; the board is unchanged, "
+                      "press Publish again."]
+        print("\n".join(report), flush=True)
+        try:
+            send_lua(msg["guid"], "publishDone(" + json.dumps(json.dumps(report)) + ")")
+        except OSError as err:
+            print(f"could not send the report to TTS: {err}", flush=True)
+
+    threading.Thread(target=run_publish, daemon=True).start()
 
 
 def summarize(msg):
@@ -53,6 +121,8 @@ def listen(log_path):
     server.bind(("127.0.0.1", EDITOR_PORT))
     server.listen(5)
     print(f"Listening on 127.0.0.1:{EDITOR_PORT}, logging to {log_path}", flush=True)
+    if serve_repo():
+        print(f"Serving {ROOT} on http://127.0.0.1:{HTTP_PORT}", flush=True)
     while True:
         conn, _ = server.accept()
         chunks = []
@@ -66,8 +136,18 @@ def listen(log_path):
         if not text:
             continue
         try:
-            entry = summarize(json.loads(text))
+            msg = json.loads(text)
         except ValueError:
+            msg = None
+        custom = msg.get("customMessage") if isinstance(msg, dict) else None
+        if isinstance(custom, dict) and custom.get("tcm") == "publish":
+            # Board parts are big; log a summary only.
+            handle_publish(custom)
+            entry = {"messageID": 4, "publish": custom.get("board"), "part": custom.get("part"),
+                     "of": custom.get("parts"), "bytes": len(custom.get("models") or "")}
+        elif msg is not None:
+            entry = summarize(msg)
+        else:
             entry = {"raw": text}
         entry["time"] = datetime.now().isoformat(timespec="seconds")
         line = json.dumps(entry, ensure_ascii=False)

@@ -21,17 +21,17 @@ Out of scope: per-model author credits (too much manual work). A static credits 
 ## Architecture
 
 ```
-TTS dev save (maintainer only)          Repo (GitHub, public)                 Player's TTS
-┌──────────────────────┐   save   ┌──────────────────────────┐  WebRequest ┌──────────────┐
-│ Intake station:      │ ───────► │ tools/export.py reads    │ ──────────► │ Spawner obj: │
-│ zone + dropdowns     │  (.json) │ save → writes catalog/   │             │ menu, spawn, │
-│ writes tags to       │          │ git push                 │             │ recall,      │
-│ GM Notes             │          └──────────────────────────┘             │ self-update  │
+TTS dev save (maintainer only)   Publish   Local repo                          Player's TTS
+┌──────────────────────┐ (bridge  ┌──────────────────────────┐  WebRequest ┌──────────────┐
+│ Intake sorting board │  message)│ tts_bridge.py listen →   │ ──────────► │ Spawner obj: │
+│ opens from catalog/  │ ───────► │ tools/publish.py writes  │  (after     │ menu, spawn, │
+│ (served on :8765)    │ ◄─────── │ catalog/, git push       │  git push)  │ recall,      │
+│                      │  report  └──────────────────────────┘             │ self-update  │
 └──────────────────────┘                                                   └──────────────┘
 ```
 
 - The **spawner object contains no models.** It fetches a small index on load and fetches one unit file on demand.
-- TTS cannot write files to disk, but **TTS saves are plain JSON on disk**. So tagging happens in TTS, and publishing happens through a Python script that reads the save.
+- **The catalog is the storage** (Nov 2026; before: unit bags in the dev save + exporting the save). TTS cannot write files, so the intake sends the board's models to the bridge listener on this PC (`sendExternalMessage`), which writes `catalog/`. The intake opens boards from the local repo the listener serves, so it always shows the latest catalog, also before a push.
 
 ## Repo layout (proposed)
 
@@ -46,8 +46,10 @@ config/
   equipment.json            battlekit item → range/keywords (from Trench Companion), used by warband import
   credits.json              static credits list (optional)
 tools/
-  export.py                 save → catalog
-  tts_bridge.py             live link to a running TTS (External Editor API): log prints/errors, run Lua in-game
+  export.py                 tagged objects → catalog (build / write / gaps); also from a save
+  publish.py                one intake board → catalog (called by the listener); --check round trip
+  tts_bridge.py             live link to a running TTS (External Editor API): log prints/errors, run Lua
+                            in-game, serve the repo on :8765, handle intake publishes
   tts_test.py               regression test of tts/model.lua in the running game (through the bridge)
   tts_spawner_test.py       regression test of tts/spawner.lua with the local catalog (own hub + local server)
 docs/index.html             warband converter page (GitHub Pages): Trench Companion export -> import code
@@ -59,7 +61,7 @@ catalog/                    GENERATED, do not edit by hand
 
 ## Data formats
 
-### Model tag (written by intake into the object's GM Notes)
+### Model tag (one board cell; built by publish.py, read by export.py)
 
 ```json
 {"tc":1,"f":"heretic-legion","u":"death-commando","s":["knights-of-avarice"],"w":1.2,"d":1.2}
@@ -68,9 +70,9 @@ catalog/                    GENERATED, do not edit by hand
 - `f` is the faction id, `u` the unit id, and `s` the **theme**: the subfactions the model was made for. Empty = the faction's vanilla look. A mercenary's `s` may name another faction's subfaction (a Goetic Warlock made for Knights of Avarice).
 - `i` (optional) = import priority: contexts whose warband imports should prefer this model. `_` = vanilla, else a subfaction id; on a hired mercenary a faction id means that faction's vanilla imports (`_` on a mercenary = the Mercenaries board's own pick).
 - `k: "i"` marks an import copy: its `s` is meaningless (the model's theme lives on its General copy). A model with no General copy at all counts as General for its import contexts too (see Export), so moving a model into an Import row is enough; copy it only to also keep it under another theme.
-- The sorting board writes exactly one membership per object: `{"s":[]}`, `{"s":[C]}` or `{"s":[],"i":[X],"k":"i"}`. A model in several cells is several copies. Older tags with several entries are split into copies when their board opens.
-- `w`/`d` are the footprint (bounds x/z) captured at intake. Bounds are not stored in save JSON, and the spawner needs them to lay out the grid before models finish loading.
-- GM Notes is used because it survives in the save JSON and players don't see it.
+- One tag = one board cell: `{"s":[]}`, `{"s":[C]}` or `{"s":[],"i":[X],"k":"i"}`. A model in several cells is several copies. `publish.py` turns each catalog entry back into one tagged copy per cell (`memberships`), so catalog entries and board cells convert both ways.
+- `w`/`d` are the footprint (bounds x/z) measured at Publish. Bounds are not stored in object JSON, and the spawner needs them to lay out the grid before models finish loading.
+- The tag sits in the object's `GMNotes`, so `export.py` also still works on a save with tagged objects (old workflow).
 
 ### config/units.json
 
@@ -93,7 +95,7 @@ catalog/                    GENERATED, do not edit by hand
 
 - Faction ids: `new-antioch`, `trench-pilgrims`, `iron-sultanate`, `heretic-legion`, `cult-of-the-black-grail`, `court-of-the-seven-headed-serpent`, `mercenaries`.
 - Unit and subfaction lists should match official TC / Trench Companion naming. Seed them from the official rules and do not invent units. Add a per-faction `misc` unit for models that fit nothing.
-- `intake.lua` fetches this file from the repo with WebRequest (or uses `LOCAL_UNITS_JSON`).
+- `intake.lua` fetches this file from the local repo the bridge listener serves.
 - `mercenaries` = Mercenaries unit ids the faction can hire: extra columns on its sorting board and extra unit chips in its spawner menu. A subfaction can override it with its own list (Trench Ghosts: `[]`, no cells in its rows / no merc chips under its filter). Lists from Niklas (Oct 2026): Scripture Guardian for all; Court and Heretic Legion: Sin Eater, Goetic Warlock, Hellhound; Black Grail: Sin Eater, Hellhound; New Antioch: Anti-Tank Communicant, Ammo Monk, Mamluk Faris, Observer, Combat Biologist, Witchburner, Dogs; Iron Sultanate: Mamluk Faris, Combat Biologist, Dogs; Pilgrims: Anti-Tank Communicant, Sister of Saint Cosmas, Ammo Monk, Observer, Witchburner, Dogs. Golem is no mercenary: it has `"everyone": true` on its Mercenaries unit and shows on every faction board and menu, also for Trench Ghosts (subfaction lists don't remove it). Merc models made for a subfaction exist practically only for Knights of Avarice.
 
 ### catalog/index.json (generated)
@@ -122,7 +124,7 @@ One model per line: its **info** as JSON, a **tab**, then its **object data** as
 {"d":1.26,"n":"Observer","s":[],"w":1.26}<TAB>{ ...TTS ObjectData... }
 ```
 
-Info: `s` / `i` (themes, import picks), `w` / `d` (footprint), and moved out of the data so the spawner can set its own without duplicate keys: `n` (Nickname), `desc` (Description), `t` (Tags), `rx` / `rz` (tilt; rotY is always 0). The spawner decodes only the info and hands the object data to TTS as text (`spawnObjectJSON`), with its own fields (Nickname, Description, Memo, Tags, LuaScript, LuaScriptState) appended before the closing brace (`spawnModel`). Why: MoonSharp's `JSON.decode` of a 106 KB unit file took **17.6 s** in TTS (game frozen; the 20 KB index takes 0.6 s), splitting the same file into lines 0.05 s. Heretic Trooper (34 models) now spawns fully in 5.5 s, a 14-model warband import in about 5 s (was about a minute). JSON never contains a raw tab, so the tab is a safe separator. The intake's Pull from catalog decodes each line's data on its own (small pieces decode fast).
+Info: `s` / `i` (themes, import picks), `w` / `d` (footprint), and moved out of the data so the spawner can set its own without duplicate keys: `n` (Nickname), `desc` (Description), `t` (Tags), `rx` / `rz` (tilt; rotY is always 0). The spawner decodes only the info and hands the object data to TTS as text (`spawnObjectJSON`), with its own fields (Nickname, Description, Memo, Tags, LuaScript, LuaScriptState) appended before the closing brace (`spawnModel`). Why: MoonSharp's `JSON.decode` of a 106 KB unit file took **17.6 s** in TTS (game frozen; the 20 KB index takes 0.6 s), splitting the same file into lines 0.05 s. Heretic Trooper (34 models) now spawns fully in 5.5 s, a 14-model warband import in about 5 s (was about a minute). JSON never contains a raw tab, so the tab is a safe separator. The intake spawns board models the same way (`spawnEntry`).
 
 The object data is the object's entry from the save's `ObjectStates`. `export.py` cleans it as follows:
 
@@ -140,26 +142,29 @@ The object data is the object's entry from the save's `ObjectStates`. `export.py
 
 ### 1. Intake station (`tts/intake.lua`)
 
-This exists in the maintainer's dev save only. It is a **sorting board** (rebuilt Oct 2026; the old single zone with unit/subfaction/import toggles is gone). UI (object XML UI): faction dropdown, **Open board** / **Pull from catalog** / **Close board**, Check unsorted, Reload config, status.
+This exists in the maintainer's dev save only. It is a **sorting board** that opens from the catalog and publishes back to it (rebuilt Nov 2026; Niklas found bags + saving + exporting, per-faction Pull and Check unsorted tedious, so all three are gone). Needs `python tools/tts_bridge.py listen` running. UI (object XML UI): faction dropdown, **Focus** dropdown (Vanilla or a subfaction), **Open board**, Reload config; with a board open **Publish to catalog** and **Close board**; status.
 
-- **Open board** lays out a grid right of the station (the bags lie on its left), read left to right from the faction's first unit (its leader) to its mercenaries: one column per unit of the faction, then one per mercenary it hires (`mercenaries` in units.json, labelled "(merc)"); two rows per context, Vanilla first, then each subfaction, each with **General** (theme) and **Import** (priority). A hired mercenary has no Vanilla General cell (untagged mercs live on the Mercenaries board, which has only the Vanilla rows). A red **Discard** strip lies beyond the last row. Every catalogued model of those units is taken out of its unit bag into its cell (cells sized to their contents plus `SPARE_D` room). Tiles and labels carry tag `TCM_Board`.
-- The maintainer then works by moving models: drop a new one into a cell, move one to retag it, copy (Ctrl+C/V) to put it in several cells, drop it on Discard to destroy it.
-- **Drop feedback:** the dropped model's cell and that cell's count go to the status. The same model (asset URLs + scale + attached parts, like export's `dedupe_key`) already in this cell: red "DUPLICATE"; in other cells: yellow "Also in: ..." (often an intended copy); else green.
-- **Close board** refuses while models lie on the board outside any cell (highlighted red). Otherwise it tags each model by its cell (`w`/`d` from `getBounds().size`), strips scripts/UI (source mods ship heavy per-model scripts), puts it into its unit bag, destroys Discard models and the board.
-- The board geometry and the station's position/yaw at opening are saved in `script_state`, so a save/reload with the board open continues, and moving the station doesn't shift the cells. One board at a time.
+- **Open board** fetches `catalog/index.json` and the faction's unit files from the listener (`http://127.0.0.1:8765/`) and lays out a grid right of the station, read left to right from the faction's first unit (its leader) to its mercenaries: one column per unit of the faction, then one per mercenary it hires (`mercenaries` in units.json, labelled "(merc)"); two rows per context, each with **General** (theme) and **Import** (priority). The **focused** context's rows come first and are tinted, with `FOCUS_SPARE` extra room (new material usually arrives as one subfaction across several units), then Vanilla, then the other subfactions. Column names at the near and far end, row names on both sides, a model count in each cell. A hired mercenary has no Vanilla General cell (untagged mercs live on the Mercenaries board, which has only the Vanilla rows). A red **Discard** strip lies beyond the last row. Every catalog entry is spawned once per cell it stands for (`spawnObjectJSON`, like the spawner). Tiles and labels carry tag `TCM_Board`.
+- The maintainer then works by moving models: drop a new one into a cell, move one to retag it, copy (Ctrl+C/V) to put it in several cells, drop it on Discard (or delete it) to remove it.
+- **Marks** (`survey`): each model's cell at opening / last Publish is its origin (`board.origin`, GUID → cell). Green = new, yellow = moved, red = outside any cell, on Discard, or a duplicate (same model, by asset URLs + scale + attached parts like export's `dedupe_key`, twice in one cell). Refreshed after drops and deletes, not on a timer. **Drop feedback** in the status: the cell, "DUPLICATE", or the other cells the same model is in.
+- **Publish** refuses while red strays or duplicates exist. Otherwise it sends every model in a cell (`f`, `u`, cell membership, `w`/`d` from `getBounds().size`, `getJSON()`) to the listener, one message per column, the models as **one JSON text field** (`sendExternalMessage` drops nested tables). `publish.py` keeps every catalog cell this board doesn't show, replaces the rest with the board's models and runs export's `build` + `write`. Its report (cells published, catalog version changed/unchanged, warnings, gaps) comes back through `publishDone`, shown under the change summary (`Observer: 1 removed`). Then Discard models go and the current cells become the origins. An unchanged board publishes as a no-op (tested). Then commit and push `catalog/` as usual.
+- **Close board** destroys the board and its models (they are copies of the catalog). With unpublished changes the first press lists them, a second press within 6 s discards them.
+- The board geometry, origins and the station's position/yaw at opening are saved in `script_state`, so a save/reload with the board open continues, and moving the station doesn't shift the cells. One board at a time.
 - Orientation (fixed Oct 2026): the player stands on the station's local **+z** side (the panel's rotation `0 0 180` reads upright from there, as on the spawner), so board x (their right) is local -x and board z (away) is local -z (`frameToWorld`). The first version assumed -z and came out mirrored (mercs left, leader right, header far away). `MODEL_YAW` 0 / `LABEL_YAW` 180 copy the spawner's tested values.
-- **Pull from catalog** (button, per faction in the dropdown, only with no board open) syncs the bags with the published catalog: every catalog model of the faction's board columns that no bag holds (compared by model identity, scale to 2 decimals since the catalog rounds transforms) is spawned with a tag rebuilt from its entry and put into its unit bag. It only adds; models in the bags and their tags win, so new local models are safe. Not automatic on load: a model discarded locally but not yet exported would come back, so export before pulling. Rebuilt tags carry the merged `s`, which can hold `_` (vanilla) next to themes; the board splits them into one copy per cell on opening, and export reads `_` in `s` as a vanilla General copy.
+- **Board ownership** (same rules in `rowFor`/`cellExists` in intake.lua and `on_board` in publish.py): a faction's board owns all memberships of its own units; on a hired mercenary's column it owns only its subfactions' rows and its vanilla import pick (`i` = faction id). A mercenary's untagged models and `_` import pick belong to the Mercenaries board.
+- The dev save's old unit bags are no longer read; they can be deleted.
 
 ### 2. Export (`tools/export.py`)
 
-- Input: the path to the TTS save (`Documents/My Games/Tabletop Simulator/Saves/*.json`).
+- Structure (Nov 2026): `build(objects, config, lookup)` turns tagged objects into catalog files in memory, `write(result)` writes them (change detection, stale files, version bump, summary), `gaps()` lists units without models (Misc skipped) and subfactions without themed models. `publish.py` calls `build`/`write` with the catalog's own cells plus a board's models; `python tools/export.py <save>` still exports a save, `python tools/export.py --gaps` prints the gaps.
+- Input (save mode): the path to the TTS save (`Documents/My Games/Tabletop Simulator/Saves/*.json`).
 - Walk `ObjectStates` **recursively**, including `ContainedObjects` (models in bags).
 - Collect objects whose GM Notes parse as a `{"tc":1,...}` tag.
 - Validate against `config/units.json` and print unknown faction/unit/subfaction ids. Do not write invalid entries.
 - Identify models by `dedupe_key` (mesh/texture/scale of the object and all attached parts). Copies of one model within a unit in **different** board cells are merged (below); the same cell twice is reported as a duplicate and dropped.
 - **Merge (built Oct 2026, `merge_copies`; catalog 10):** the sorting board makes copies on purpose, so identical models within one unit are **merged** into one entry: `s` = union of the General copies' themes (a vanilla copy adds `_` when themed copies exist too; `k:"i"` copies add no theme), `i` = union of all copies' `i`. **Exception (Niklas, Oct 2026):** a model with no General copy at all (only `k:"i"` copies) counts as General for each of its import contexts too, so `s` = its subfaction import contexts (`_` for vanilla; a mercenary's faction-id key counts as vanilla). Reason: moving a model into an Import row (instead of copying it) is the natural workflow; the Oct 2026 audit of the dev save found 71 such models (Holy Warrior, Feldkaplan, Swiss Lieutenant, Lazarist Prophet, ...) that would otherwise lose their theme. Validation accepts subfaction ids of any faction in a mercenary's `s`/`i`, faction ids in a mercenary's `i`, and `k: "i"`. `any`/`subs` count merged entries as above, and `index.json` gets each faction's `mercenaries` list, the subfactions whole (with their own `mercenaries` lists) and units' `everyone` flag.
 - Clean the data as described above, then write the unit files and `index.json`. Sort the output deterministically so git diffs stay readable.
-- Bump `catalog` in `version.json` only if the output changed.
+- Bump `catalog` in `version.json` only if the output changed. Objects that went through TTS come back with float noise, so `ColorDiffuse` is rounded to 4 decimals and tilts (`rotX`/`rotZ`) under 2° snap to 0; otherwise every publish of an unchanged board rewrote most files.
 - Print a summary of counts per faction and unit, plus warnings.
 
 ### 3. Spawner (`tts/spawner.lua`)
@@ -193,6 +198,9 @@ This is the published object. It must work when spawned anywhere and at any rota
 - Object XML UI is drawn in element order, not depth-sorted, and both sides of a panel render. Closed 3D shapes (cubes) show back faces in front; only stacks of parallel layers look right. `Button`s have a rounded sprite; use `Image`/`Panel` for square shapes.
 - Returning true from `onObjectNumberTyped` in an object script does not stop TTS's default number handling on another object. The object's own `onNumberTyped` returning true does.
 - External Editor API: TTS does not send messageID 5 return values for executed code; `tools/tts_bridge.py run` wraps code to `print` its result instead.
+- `sendExternalMessage` **silently drops** a table that contains another table (even a list of strings). Flat tables of strings/numbers arrive, at least up to 64 KB per message, so nested data travels as a JSON text field.
+- Code executed through the External Editor API gets backslashes garbled. Build such characters with `string.char` or send the code from a Python file, not a shell string.
+- Executed code only sees an object script's **globals**; `local` functions and variables (e.g. the intake's `status`, `refreshMarks`) are unreachable. Call the global UI callbacks or events (`ui_publish`, `onObjectDrop`) instead.
 - Object XML UI `tooltip`s render on the ground below the object and can stay stuck after the element is removed. Don't use them on model panels.
 - XML UI text elements cut off around 16,000 characters (Unity's vertex limit), and long multi-line `InputField` pastes can crash TTS. For big pastes use `lineType="SingleLine"` + `onEndEdit`.
 - `getBoundsNormalized()` counts the object's `createButton` buttons (a 1" block with a 7" status button measured 11 x 14"), and the value can lag behind `clearButtons()`. Measure an object before giving it buttons; the spawner measures itself once in `onLoad` (`hubBounds`). `getBounds()` doesn't include them but is rotation-dependent.
@@ -220,11 +228,11 @@ This is the published object. It must work when spawned anywhere and at any rota
 
 ## Debugging in the live game
 
-`tools/tts_bridge.py` talks to a running TTS on this PC. `python tools/tts_bridge.py listen` (keep running in the background) logs everything TTS sends (print output, Lua errors, saves) to `tts.log`. `python tools/tts_bridge.py push tts/spawner.lua --guid <guid>` loads a local script file into an object and reloads it (to try changes before pushing to GitHub). `python tools/tts_bridge.py run "<lua>" --guid <object guid>` runs code inside that object's script environment (it must have a script; `-1` = Global) and prints the result, e.g. to read positions, lock state, memos or `script_state`, or to call an object's global functions to simulate events. While the listener runs, opening the script editor on an object without a script goes to the listener instead of the in-game editor.
+`tools/tts_bridge.py` talks to a running TTS on this PC. `python tools/tts_bridge.py listen` (keep running in the background) logs everything TTS sends (print output, Lua errors, saves) to `tts.log`, serves the repo on `http://127.0.0.1:8765/` (the intake and the spawner test read from it) and handles the intake's Publish (`handle_publish` collects the parts, runs `publish.py` in a thread, answers with `publishDone`). Restart it after changing export.py or publish.py: it keeps the imported modules. `python tools/tts_bridge.py push tts/spawner.lua --guid <guid>` loads a local script file into an object and reloads it (to try changes before pushing to GitHub). `python tools/tts_bridge.py run "<lua>" --guid <object guid>` runs code inside that object's script environment (it must have a script; `-1` = Global) and prints the result, e.g. to read positions, lock state, memos or `script_state`, or to call an object's global functions to simulate events. While the listener runs, opening the script editor on an object without a script goes to the listener instead of the in-game editor.
 
 `python tools/tts_test.py` (listener running, any game loaded) tests the model script in the live game: it spawns its own stand-in models (blocks running the local `tts/model.lua`), a fake spawn platform and real dice, checks load / tags / state version, per-faction icons, token height while lifted and tilted, Set base size, dice link / 1-6 / 0, Ready all through the `TCUIOperative` interface, copies getting a new id, and swap on / off the platform, then removes everything it made (tag `TCM_Test`; `--keep` leaves it). Run it after every change to model.lua.
 
-`python tools/tts_spawner_test.py` (listener running, any game loaded) tests the spawner against the **local** catalog and scripts: it serves the repo on `http://127.0.0.1:8765`, spawns its own hub running the local spawner pointed there, and checks catalog load, spawning a unit (platform, label, tags, stripped model script, faction), reload keeping the unit, removing it, the New Antioch sample import, the Extend UI area and Clear all (skipped if other spawned objects are on the table), then removes what it made. TTS can download from a local http address, so changes to export, catalog or scripts can be tested before pushing. Run it after every change to spawner.lua, export.py or the catalog format.
+`python tools/tts_spawner_test.py` (listener running, any game loaded) tests the spawner against the **local** catalog and scripts: it serves the repo on `http://127.0.0.1:8765` (or uses the listener's server), spawns its own hub running the local spawner pointed there, and checks catalog load, spawning a unit (platform, label, tags, stripped model script, faction), reload keeping the unit, removing it, the New Antioch sample import, the Extend UI area and Clear all (skipped if other spawned objects are on the table), then removes what it made. TTS can download from a local http address, so changes to export, catalog or scripts can be tested before pushing. Run it after every change to spawner.lua, export.py or the catalog format.
 
 ## Open decisions
 
@@ -253,7 +261,7 @@ This is the published object. It must work when spawned anywhere and at any rota
   - Goetic Warlock is a Mercenaries unit. Knights of Avarice (and other heretic subfactions) get Goetic Warlocks made for them through the theme: on the Heretic Legion board's Goetic Warlock column, Knights of Avarice General gives `f: mercenaries, s: ["knights-of-avarice"]`. New Antioch's "Combat Medic" and the mercenary "Sister of Saint Cosmas" are separate units.
   - Spellings follow the site, including its typos ("Dessicated Husk", "Leviathal Chorus Chorister", "Detatchment").
 - Legacy scripts are a source of ideas only, not the reference implementation.
-- Intake stores models in one bag per unit (not a grid), found by a `{"tcbag":1,"f":..,"u":..}` marker in the bag's GM Notes.
+- Intake storage is the catalog itself (Nov 2026). Before: one bag per unit in the dev save (`{"tcbag":1,...}` marker), exported from the saved game; dropped because every change needed save + export, and syncing from the cloud went one faction at a time.
 - Model structure in practice: the tagged top-level object is usually the **base**, with the sculpt attached as a `ChildObject` (occasionally the base is part of the sculpt mesh). Many models share the same base, so duplicate detection keys on the whole assembly: the object's own mesh/texture/scale plus all attached parts, recursively.
 - Export details beyond the spec above: `ChildObjects` (the attached sculpts/parts) are kept and stripped recursively, as are `States`. `Nickname` is replaced by the unit name (source nicknames are often stat blocks). `TypeIndex` is set to 1 (Figurine) on the top-level `CustomMesh`/`CustomAssetbundle`, since other table scripts look for figurines. `rotY` is reset to 0 (w/d swapped if the model was turned sideways) so all models face their mesh forward. `Locked` is set to false. Empty `s` may arrive as `[]` or `{}`.
 - Object XML UI z is height in UI units (100 per local unit). Both scripts compute it from `getBoundsNormalized()` so the panel sits on top of whatever object they're on.

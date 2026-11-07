@@ -211,10 +211,29 @@ def clean(data, unit_name, w, d):
     if abs(math.sin(yaw)) > math.sqrt(0.5):
         w, d = d, w
     t["rotY"] = 0.0
+    # A model that settled on a board tile can tilt by a fraction of a degree (physics); only
+    # real tilts (a flipped model) are kept, so republishing an unchanged board changes nothing.
+    for axis in ("rotX", "rotZ"):
+        a = t.get(axis, 0.0) % 360
+        if a < 2 or a > 358:
+            t[axis] = 0.0
     for child in data.get("ChildObjects") or []:
         round_transform(child.get("Transform", {}))
     round_transform(t)
+    round_colors(data)
     return data, w, d
+
+
+def round_colors(data):
+    """TTS writes colours with float32 noise (0.08710327 vs 0.08710321 for the same colour)."""
+    for key in ("ColorDiffuse",):
+        c = data.get(key)
+        if isinstance(c, dict):
+            for ch, v in c.items():
+                if isinstance(v, float):
+                    c[ch] = round(v, 4) + 0.0
+    for child in data.get("ChildObjects") or []:
+        round_colors(child)
 
 
 # ---------------------------------------------------------------- writing
@@ -255,23 +274,18 @@ def read_text(path):
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
-def main():
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")  # Windows console + unit names with accents
+# ---------------------------------------------------------------- building
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("save", type=Path, help="TTS save file (Saves/TS_Save_N.json)")
-    parser.add_argument("--dry-run", action="store_true", help="report only, write nothing")
-    args = parser.parse_args()
-
-    config, lookup = load_config()
-    save = json.loads(args.save.read_text(encoding="utf-8"))
-
+def build(objects, config, lookup):
+    """Tagged TTS objects (any iterable; untagged ones are skipped) -> the whole catalog:
+    {"files": {path relative to catalog/: text} (unit files), "index_factions": [...],
+    "warnings", "shared", "summary", "tagged", "merged", "total"}. Used by main() (objects from
+    a save) and by tools/publish.py (objects from the catalog plus a published board)."""
     warnings = []
     units = {}  # (f, u) -> {dedupe key or index: entry}
     copies = {}  # (f, u, key) -> [(subs, imp, is_import_copy)], merged after reading
     tagged = merged = 0
-    for obj in iter_objects(save.get("ObjectStates", [])):
+    for obj in objects:
         tag = parse_tag(obj.get("GMNotes"))
         if not tag:
             continue
@@ -367,6 +381,36 @@ def main():
             index_faction["units"] = index_units
             index_factions.append(index_faction)
 
+    return {"files": files, "index_factions": index_factions, "warnings": warnings, "shared": shared,
+            "summary": summary, "tagged": tagged, "merged": merged, "total": sum(len(b) for b in units.values())}
+
+
+def gaps(config, index_factions):
+    """What the catalog lacks: units without any model, and subfactions without models made for
+    them (per faction, over its own units). Lines of text."""
+    have = {(f["id"], u["id"]): u for f in index_factions for u in f["units"]}
+    lines = []
+    for faction in config["factions"]:
+        f = faction["id"]
+        # Misc ("fits nothing") units are expected to be empty.
+        empty = [u["name"] for u in faction.get("units", []) if (f, u["id"]) not in have and u["id"] != "misc"]
+        if empty:
+            lines.append(f"{faction['name']}: no models for {', '.join(empty)}")
+        for sub in faction.get("subfactions", []):
+            themed = sum(u.get("subs", {}).get(sub["id"], 0) for (ff, _), u in have.items() if ff == f)
+            if themed == 0:
+                lines.append(f"{faction['name']} / {sub['name']}: no models made for it")
+    return lines
+
+
+# ---------------------------------------------------------------- writing to catalog/
+
+def write(result, dry_run=False):
+    """Writes a build() result to catalog/ (unit files, index.json, version.json) if anything
+    changed; bumps the catalog version then. Prints the report; returns (changed, version)."""
+    files, index_factions = dict(result["files"]), result["index_factions"]
+    warnings, shared, summary = result["warnings"], result["shared"], result["summary"]
+
     # ---- decide whether anything changed (index compared without its version number)
     version_path = CATALOG / "version.json"
     version = json.loads(read_text(version_path) or '{"catalog": 0, "spawner": 1, "spawnerUrl": "tts/spawner.lua"}')
@@ -385,8 +429,8 @@ def main():
     files["version.json"] = dump_json(version)
 
     # ---- report
-    total = sum(len(b) for b in units.values())
-    print(f"Tagged objects found: {tagged}, exported models: {total}, copies merged: {merged}")
+    print(f"Tagged objects found: {result['tagged']}, exported models: {result['total']}, "
+          f"copies merged: {result['merged']}")
     print("\n".join(summary) or "  (nothing to export)")
     if shared:
         print(f"\nModels used by several units ({len(shared)}):")
@@ -400,11 +444,11 @@ def main():
         print(f"Removing stale file: {p.relative_to(CATALOG).as_posix()}")
     print(f"\nCatalog version: {version['catalog']} ({'changed' if changed else 'unchanged'})")
 
-    if args.dry_run:
+    if dry_run:
         print("Dry run: nothing written.")
-        return
+        return changed, version["catalog"]
     if not changed:
-        return
+        return changed, version["catalog"]
     for p in stale:
         p.unlink()
     for rel, text in files.items():
@@ -412,6 +456,28 @@ def main():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
     print(f"Wrote {len(files)} file(s) to {CATALOG}")
+    return changed, version["catalog"]
+
+
+def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # Windows console + unit names with accents
+
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("save", type=Path, nargs="?", help="TTS save file (Saves/TS_Save_N.json)")
+    parser.add_argument("--dry-run", action="store_true", help="report only, write nothing")
+    parser.add_argument("--gaps", action="store_true", help="only print what the current catalog lacks")
+    args = parser.parse_args()
+
+    config, lookup = load_config()
+    if args.gaps or not args.save:
+        index = json.loads(read_text(CATALOG / "index.json") or '{"factions": []}')
+        print("\n".join(gaps(config, index["factions"])) or "No gaps.")
+        return
+    save = json.loads(args.save.read_text(encoding="utf-8"))
+    result = build(iter_objects(save.get("ObjectStates", [])), config, lookup)
+    write(result, args.dry_run)
+    print("\nGaps:\n  " + ("\n  ".join(gaps(config, result["index_factions"])) or "none"))
 
 
 if __name__ == "__main__":

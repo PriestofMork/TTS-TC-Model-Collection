@@ -36,8 +36,12 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def serve():
+    """Serves the repo; None if the port is taken (the bridge listener already serves it)."""
     handler = functools.partial(QuietHandler, directory=str(ROOT))
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), handler)
+    try:
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), handler)
+    except OSError:
+        return None
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
@@ -104,7 +108,8 @@ for _, o in ipairs(getAllObjects()) do
     if o.hasTag('TCM_Test') or string.find(o.memo or '', token, 1, true) == 1 then o.destruct() end
 end
 if hub then hub.destruct() end return 0""")
-        server.shutdown()
+        if server:
+            server.shutdown()
     failed = t.results.count(False)
     print(f"\n{len(t.results) - failed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
