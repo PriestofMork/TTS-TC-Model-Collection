@@ -83,7 +83,9 @@ def handle_publish(msg):
     try:
         part = json.loads(msg.get("models") or "[]")
     except ValueError as err:
+        # Never publish without it: the board's models in this part would be deleted.
         print(f"publish part {msg.get('part')} unreadable: {err}", flush=True)
+        entry["bad"] = f"part {msg.get('part')} of {entry['of']} arrived unreadable ({err})"
         part = []
     entry["parts"][msg.get("part", 1)] = part
     if len(entry["parts"]) < entry["of"]:
@@ -93,6 +95,8 @@ def handle_publish(msg):
 
     def run_publish():
         try:
+            if entry.get("bad"):
+                raise ValueError(entry["bad"])
             import publish   # tools/publish.py (this folder is on sys.path)
             report = publish.publish(msg["board"], models)
         except Exception as err:   # noqa: BLE001 - any failure goes back to the intake

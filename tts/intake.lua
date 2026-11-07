@@ -72,6 +72,8 @@ local BOARD_TAG   = "TCM_Board"         -- tiles and labels of the open board
 
 local BATCH_SIZE = 10   -- objects spawned or destroyed per frame
 local PUBLISH_TIMEOUT = 90   -- seconds to wait for the bridge listener's report
+local PART_BYTES      = 500000   -- Publish message size (models' JSON per message)
+local MIN_FOOTPRINT   = 0.2      -- a new model measuring less (inches) hasn't loaded yet
 
 -- Object XML UI is positioned from the object's centre; its z is height (negative = up) in
 -- UI units (100 per local unit). The panel is lifted to the top face automatically, plus
@@ -101,6 +103,7 @@ local dropToken    = 0
 local closeArmed   = 0          -- os.time() until which a second Close discards the changes
 local publishId    = nil        -- the Publish waiting for its report
 local publishLines = {}         -- what that Publish changes (shown above the report)
+local publishSizes = {}         -- the footprints it sent (kept as the models' sizes once done)
 
 -- ============ UTIL ============
 local function round(num, dec)
@@ -173,8 +176,10 @@ local function highlight(obj, color)
     highlighted[#highlighted + 1] = obj
 end
 
+-- Locked ones count too: some source mods ship their models locked, and a model left out
+-- silently would never reach the catalog (export unlocks them).
 local function isModel(obj)
-    return obj ~= nil and MODEL_NAMES[obj.name] and not obj.getLock() and not obj.hasTag(BOARD_TAG)
+    return obj ~= nil and MODEL_NAMES[obj.name] and not obj.hasTag(BOARD_TAG)
 end
 
 -- ============ MEMBERSHIPS ============
@@ -554,7 +559,10 @@ local function spawnEntry(e, pos, cellKey)
     if #list(e.t) > 0 then extra = extra .. ',"Tags":' .. JSON.encode(e.t) end   -- an empty table may encode as {}
     local obj = spawnObjectJSON({json = string.sub(e.json, 1, -2) .. extra .. "}", position = pos,
                                  rotation = {e.rx or 0, board.frame.yaw + MODEL_YAW, e.rz or 0}})
-    if obj then board.origin[obj.getGUID()] = cellKey end
+    if obj then
+        board.origin[obj.getGUID()] = cellKey
+        board.size[obj.getGUID()] = {tonumber(e.w) or DEFAULT_SIZE, tonumber(e.d) or DEFAULT_SIZE}
+    end
 end
 
 local refreshMarks
@@ -619,7 +627,7 @@ local function buildBoard(fe, entries)
 
     local rot, pos = self.getRotation(), self.getPosition()
     board.frame = {x = pos.x, y = tableY(), z = pos.z, yaw = rot.y}
-    board.origin, board.counts = {}, {}
+    board.origin, board.counts, board.size = {}, {}, {}
     saveState()
 
     -- Tiles and labels first, then the models.
@@ -704,8 +712,16 @@ local function openBoard()
                 buildBoard(fe, entries)
                 return
             end
-            fetch("catalog/" .. job.file, function(t)
-                for _, e in ipairs(parseUnit(t or "")) do entries[#entries + 1] = {c = job.c, e = e} end
+            fetch("catalog/" .. job.file, function(t, ferr)
+                -- A unit that failed to load must not open empty: publishing that board would
+                -- delete all its models from the catalog.
+                if not t then
+                    board, busy = nil, false
+                    setStatus("Could not load catalog/" .. job.file .. " (" .. tostring(ferr) .. "). "
+                        .. "The board was not opened. " .. NO_LISTENER)
+                    return
+                end
+                for _, e in ipairs(parseUnit(t)) do entries[#entries + 1] = {c = job.c, e = e} end
                 nextFile()
             end)
         end
@@ -749,8 +765,11 @@ local function survey()
         if m.where ~= "cell" then
             highlight(m.obj, COLOR_BAD)
             if from and m.where == "discard" then bump(tonumber(string.sub(from, 1, string.find(from, ":", 1, true) - 1)), "removed") end
+            -- New models not (yet) in a cell are changes too: Close must not drop them unasked.
+            if not from and m.where == "board" then changes._loose = (changes._loose or 0) + 1 end
         elseif m.dup then
             highlight(m.obj, COLOR_BAD)
+            if not from then bump(m.c, "new") end
         elseif not from then
             highlight(m.obj, COLOR_NEW)
             bump(m.c, "new")
@@ -786,6 +805,7 @@ local function changeLines(changes)
             lines[#lines + 1] = col.name .. ": " .. table.concat(parts, ", ")
         end
     end
+    if changes._loose then lines[#lines + 1] = changes._loose .. " new model(s) outside any cell" end
     return lines
 end
 
@@ -848,24 +868,59 @@ local function publishBoard()
             .. " (red). Fix them, then Publish again.")
         return
     end
+    -- Footprints (bounds aren't in the object JSON; the spawner needs them before models load).
+    -- Catalog models keep their stored one, copies take their original's (same model), and only
+    -- new models are measured. Measuring everything gave models still loading their assets a
+    -- size of 0, and export then dropped them from the catalog (tested on a fresh game).
+    local sizeByKey = {}
+    for _, m in ipairs(models) do
+        local sz = board.size[m.guid]
+        if sz and m.where == "cell" then sizeByKey[keyOf(m.obj)] = sz end
+    end
+    local sizes, unmeasured = {}, 0
+    for _, m in ipairs(models) do
+        if m.where == "cell" then
+            local sz = board.size[m.guid] or sizeByKey[keyOf(m.obj)]
+            if not sz and not m.obj.loading_custom then
+                local b = m.obj.getBounds().size
+                if b.x >= MIN_FOOTPRINT and b.z >= MIN_FOOTPRINT then sz = {round(b.x, 2), round(b.z, 2)} end
+            end
+            if sz then sizes[m.guid] = sz else unmeasured = unmeasured + 1 end
+        end
+    end
+    if unmeasured > 0 then
+        setStatus(unmeasured .. " new model(s) are still loading (no size yet). Wait until they show, then Publish again.")
+        return
+    end
     local byCol = {}
     for _, m in ipairs(models) do
         if m.where == "cell" then
             local col, row = board.cols[m.c], board.rows[m.r]
             local mem = cellMembership(col, row)
-            -- Bounds are not in the save JSON; the spawner needs the footprint before models load.
-            local size = m.obj.getBounds().size
+            local sz = sizes[m.guid]
             byCol[m.c] = byCol[m.c] or {}
             -- The object's JSON goes in as it is (it already is JSON), so nothing big is encoded.
             table.insert(byCol[m.c], '{"f":' .. JSON.encode(col.f) .. ',"u":' .. JSON.encode(col.u)
                 .. ',"kind":' .. JSON.encode(mem.kind) .. ',"ctx":' .. JSON.encode(mem.ctx)
-                .. ',"w":' .. round(size.x, 2) .. ',"d":' .. round(size.z, 2) .. ',"data":' .. m.obj.getJSON() .. '}')
+                .. ',"w":' .. sz[1] .. ',"d":' .. sz[2] .. ',"data":' .. m.obj.getJSON() .. '}')
         end
     end
+    publishSizes = sizes
     -- sendExternalMessage silently drops messages with nested tables (even a list of strings;
-    -- tested), so each part's models travel as one JSON text field.
-    local parts = {}
-    for c = 1, #board.cols do parts[#parts + 1] = "[" .. table.concat(byCol[c] or {}, ",") .. "]" end
+    -- tested), so each part's models travel as one JSON text field. Parts are cut by size
+    -- (messages of 1 MB arrived intact, tested; models from source mods can carry big scripts).
+    local parts, cur, size = {}, {}, 0
+    for c = 1, #board.cols do
+        for _, m in ipairs(byCol[c] or {}) do
+            if #cur > 0 and size + #m > PART_BYTES then
+                parts[#parts + 1] = "[" .. table.concat(cur, ",") .. "]"
+                cur, size = {}, 0
+            end
+            cur[#cur + 1] = m
+            size = size + #m
+        end
+    end
+    parts[#parts + 1] = "[" .. table.concat(cur, ",") .. "]"
     busy = true
     publishId = tostring(os.time()) .. tostring(math.random(1000, 9999))
     local id, guid = publishId, self.getGUID()
@@ -905,12 +960,13 @@ function publishDone(reportJson)
                     obj.destruct()
                 elseif where == "cell" then
                     board.origin[obj.getGUID()] = c .. ":" .. r
+                    board.size[obj.getGUID()] = publishSizes[obj.getGUID()] or board.size[obj.getGUID()]
                 end
             end
         end
         -- Gone objects drop out of the origin list.
         for guid in pairs(board.origin) do
-            if not getObjectFromGUID(guid) then board.origin[guid] = nil end
+            if not getObjectFromGUID(guid) then board.origin[guid], board.size[guid] = nil, nil end
         end
         saveState()
     end
@@ -1009,7 +1065,10 @@ function onLoad(saved_data)
             sel.f, sel.focus = data.f, data.focus or "_"
             -- An open board's tiles and models were saved with the game; only its geometry
             -- and origins need restoring.
-            if type(data.board) == "table" and data.board.frame and data.board.origin then board = data.board end
+            if type(data.board) == "table" and data.board.frame and data.board.origin then
+                board = data.board
+                board.size = board.size or {}   -- boards saved before footprints were kept
+            end
         end
     end
     render()

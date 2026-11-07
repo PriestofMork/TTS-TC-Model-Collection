@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PORT = 8765
 HUB_ART = "https://cdnb.artstation.com/p/assets/images/images/022/892/925/large/mike-franchina-sword-saint-female.jpg?1577126961"
 UNIT = ("mercenaries", "observer")   # a small unit
+GROUPED = ("new-antioch", "combat-medic")   # few models, several themes (theme headings)
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -172,6 +173,23 @@ return i ~= nil and string.find(string.sub(x, i, i + 120), '7F2119', 1, true) ~=
     t.lua(f"ui_click(nil, nil, 'unit:{key}') return 0", guid=hub)
     gone = wait_for(lambda: count("|" + key, model_only=False) == 0, timeout=20)
     t.check("remove: clicking the unit again removes everything of it", gone)
+
+    # --- All models: one heading per theme ---------------------------------------------------
+    gf, gu = GROUPED
+    gunit = next(u for f in index["factions"] if f["id"] == gf for u in f["units"] if u["id"] == gu)
+    themes = (1 if gunit.get("any") else 0) + len(gunit.get("subs") or {})
+    gkey = f"{gf}/{gu}"
+    t.lua(f"ui_click(nil, nil, 'faction:{gf}') ui_click(nil, nil, 'unit:{gkey}') return 0", guid=hub)
+    wait_for(lambda: count("|" + gkey) >= gunit["count"], timeout=60)
+    time.sleep(1)
+    texts = t.lua(f"""local r = {{}}
+for _, o in ipairs(getAllObjects()) do
+    if o.name == '3DText' and string.find(o.memo or '', '|{gkey}', 1, true) then r[#r + 1] = o.TextTool.getValue() end
+end return r""")
+    t.check(f"groups: {gunit['name']} has a heading per theme ({themes}) plus its label",
+            len(texts or []) == themes + 1 and any("Vanilla (" in x for x in texts), texts)
+    t.lua(f"ui_click(nil, nil, 'unit:{gkey}') return 0", guid=hub)
+    wait_for(lambda: count("|" + gkey, model_only=False) == 0, timeout=20)
 
     # --- warband import --------------------------------------------------------------------
     code, members = warband_code()

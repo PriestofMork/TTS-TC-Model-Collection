@@ -24,7 +24,9 @@ CATALOG = REPO / "catalog"
 
 # Keys stripped from the model and from everything attached to it. Source mods often ship
 # heavy per-model scripts and UI; GUIDs are reassigned by TTS anyway.
-STRIP_KEYS = ("LuaScript", "LuaScriptState", "XmlUI", "GUID", "ContainedObjects", "GMNotes")
+# Memo: the spawner writes its own (a second "Memo" key would clash), and source mods or table
+# scripts may leave theirs on models.
+STRIP_KEYS = ("LuaScript", "LuaScriptState", "XmlUI", "GUID", "ContainedObjects", "GMNotes", "Memo")
 
 
 # ---------------------------------------------------------------- reading

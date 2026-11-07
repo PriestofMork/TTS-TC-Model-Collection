@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 15
+local SPAWNER_VERSION = 16
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -38,6 +38,10 @@ local NOTE_DEPTH    = 0.5    -- room for a block's small note line (warbands: ho
 local NOTE_FONT     = 20
 local NOTE_CHAR     = 0.17   -- estimated note width per character at NOTE_FONT
 local BLOCK_GAP     = 0.8    -- space between two units' platforms
+local GROUP_DEPTH   = 0.9    -- room for a theme heading in front of its rows (All models: Vanilla, subfactions)
+local GROUP_FONT    = 22
+local GROUP_CHAR    = 0.19   -- estimated heading width per character at GROUP_FONT
+local GROUP_COLOR   = {0.88, 0.69, 0.31}   -- headings in the console's gold
 
 -- Each unit stands on its own locked platform, raised above the surface the spawner stands
 -- on, so spawned models never land in terrain or on the board.
@@ -499,7 +503,7 @@ local function flushQueue(done)
     Wait.frames(runQueue, 1)
 end
 
-local function spawnLabel(text, pos, memo, fontSize)
+local function spawnLabel(text, pos, memo, fontSize, color)
     local yaw = self.getRotation().y
     spawnObject({
         type     = "3DText",
@@ -508,6 +512,7 @@ local function spawnLabel(text, pos, memo, fontSize)
         callback_function = function(obj)
             obj.TextTool.setValue(text)
             obj.TextTool.setFontSize(fontSize or LABEL_FONT)
+            if color then obj.TextTool.setFontColor(color) end
             obj.memo = memo
             obj.addTag(SPAWN_TAG)
         end,
@@ -591,8 +596,9 @@ end
 
 -- Lays out one block on its own platform: a label, then rows of models wrapped at
 -- MAX_ROW_WIDTH, each row as deep as its deepest model. items = {e = catalog entry, state=,
--- name=, desc=} (see spawnModel); the footprint (e.w / e.d) comes from the intake because
--- bounds aren't known before the models load.
+-- name=, desc=, group=} (see spawnModel); the footprint (e.w / e.d) comes from the intake
+-- because bounds aren't known before the models load. Items with a group (a theme heading,
+-- see groupByTheme) start new rows under that heading whenever the group changes.
 -- note: an optional small line in front of the label (warbands: how to swap models).
 local function queueBlock(key, label, items, note)
     local memo = token .. "|" .. key
@@ -614,8 +620,19 @@ local function queueBlock(key, label, items, note)
         x, rowDepth, row = 0, 0, {}
     end
 
+    local headings, group, headingWidth = {}, nil, 0   -- {text, z}
     for _, item in ipairs(items) do
         local w, d = item.e.w or 1.5, item.e.d or 1.5
+        if item.group ~= group then
+            if #row > 0 then flushRow() end
+            group = item.group
+            if group then
+                -- Nearer its own rows than the ones in front: tall models in front would hide it.
+                headings[#headings + 1] = {text = group, z = z + GROUP_DEPTH * 0.6}
+                z = z + GROUP_DEPTH
+                headingWidth = math.max(headingWidth, #group * GROUP_CHAR)
+            end
+        end
         if #row > 0 and x + w > MAX_ROW_WIDTH then flushRow() end
         row[#row + 1] = {item = item, x = x + w / 2}
         x = x + w + MODEL_PAD
@@ -625,7 +642,7 @@ local function queueBlock(key, label, items, note)
 
     -- The platform covers the label and the widest row. Then the block gets its place.
     local depth = z - ROW_GAP + PLATFORM_MARGIN
-    local width = math.max(widest, #label * LABEL_CHAR, note and #note * NOTE_CHAR or 0) + 2 * PLATFORM_MARGIN
+    local width = math.max(widest, #label * LABEL_CHAR, note and #note * NOTE_CHAR or 0, headingWidth) + 2 * PLATFORM_MARGIN
     local bx, bz = findSpot(width, depth)
     blocks[key] = {x = bx, z = bz, w = width, d = depth}
     local cx, top = bx + width / 2, platformTop()
@@ -643,6 +660,10 @@ local function queueBlock(key, label, items, note)
         local notePos = layoutToWorld(cx, front - PLATFORM_MARGIN - noteDepth / 2, top + 0.05)
         queue[#queue + 1] = function() spawnLabel(note, notePos, memo, NOTE_FONT) end
     end
+    for _, h in ipairs(headings) do
+        local pos = layoutToWorld(cx, front - h.z, top + 0.05)
+        queue[#queue + 1] = function() spawnLabel(h.text, pos, memo, GROUP_FONT, GROUP_COLOR) end
+    end
     for _, p in ipairs(placed) do
         local it = p.item
         local pos = layoutToWorld(cx + p.x, front - p.z, top + SPAWN_HEIGHT)
@@ -653,10 +674,54 @@ local function queueBlock(key, label, items, note)
 end
 
 -- Hired mercenaries spawned from a faction's menu get that faction's activation icon.
+-- Sorts a unit's entries by theme for "All models": Vanilla first, then the open faction's
+-- subfactions in menu order, then other factions' (themes on mercenaries). A model made for
+-- several goes under the first of them. Returns the sorted entries and each one's heading
+-- ("Knights of Avarice (4)"), or no headings when all share one theme (nothing to tell apart).
+local function groupByTheme(entries)
+    local order, names = {"_"}, {_ = "Vanilla"}
+    local open = factionById[sel.f]
+    local function add(fe)
+        for _, sf in ipairs(fe and fe.subfactions or {}) do
+            if not names[sf.id] then order[#order + 1], names[sf.id] = sf.id, sf.name end
+        end
+    end
+    add(open)
+    for _, fe in ipairs(index.factions) do add(fe) end
+    local rank = {}
+    for i, id in ipairs(order) do rank[id] = i end
+
+    local keyed, counts, distinct = {}, {}, 0
+    for i, e in ipairs(entries) do
+        local key = "_"
+        if not isVanilla(e) then
+            for _, s in ipairs(e.s) do
+                if rank[s] and (key == "_" or rank[s] < rank[key]) then key = s end
+            end
+        end
+        keyed[#keyed + 1] = {e = e, key = key, i = i}
+        if not counts[key] then distinct = distinct + 1 end
+        counts[key] = (counts[key] or 0) + 1
+    end
+    if distinct < 2 then return entries, {} end
+    -- table.sort isn't stable: the original position breaks ties.
+    table.sort(keyed, function(a, b)
+        if a.key ~= b.key then return rank[a.key] < rank[b.key] end
+        return a.i < b.i
+    end)
+    local sorted, groups = {}, {}
+    for _, k in ipairs(keyed) do
+        sorted[#sorted + 1] = k.e
+        groups[#groups + 1] = names[k.key] .. " (" .. counts[k.key] .. ")"
+    end
+    return sorted, groups
+end
+
 local function queueUnit(f, unit, entries)
-    local items = {}
-    for _, e in ipairs(entries) do
-        items[#items + 1] = {e = e, state = {f = sel.f or f, u = unit.id}}
+    local items, groups = {}, {}
+    if not sel.sub then entries, groups = groupByTheme(entries) end
+    for i, e in ipairs(entries) do
+        items[#items + 1] = {e = e, state = {f = sel.f or f, u = unit.id}, group = groups[i]}
     end
     queueBlock(unitKey(f, unit.id), unit.name .. " (" .. #entries .. ")", items)
 end
