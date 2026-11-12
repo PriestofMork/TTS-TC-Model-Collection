@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 16
+local SPAWNER_VERSION = 17
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -438,15 +438,19 @@ local function buildXml()
         put("Panel", cx, y0 + EXT_D, EXT_W, 0.06, deco)
         put("Panel", ax, cy, 0.06, EXT_D, deco)
         put("Panel", ax + EXT_W, cy, 0.06, EXT_D, deco)
-        text(cx, y0 + EXT_D - 0.4, EXT_W - 0.5, 0.5, "Extend UI: drop any model in here",
+        text(cx, y0 + EXT_D - 0.4, EXT_W - 0.5, 0.5, "Extend UI: put your models in here",
             'raycastTarget="false" fontSize="34" fontStyle="Bold" alignment="MiddleLeft"')
-        text(cx, y0 + EXT_D - 0.9, EXT_W - 0.5, 0.4, "It gets the TC model script (activation, dice, tokens, "
-            .. "range rings) with this faction's icon:", 'raycastTarget="false" fontSize="22" alignment="MiddleLeft"')
+        text(cx, y0 + EXT_D - 0.9, EXT_W - 0.5, 0.4, "Apply script removes all their scripts and gives them the TC "
+            .. "model script (activation, dice, tokens, range rings) with this faction's icon:",
+            'raycastTarget="false" fontSize="22" alignment="MiddleLeft"')
         for i, f in ipairs(index.factions) do
             put("Button", ax + 0.65 + (i - 1) * 0.95, y0 + EXT_D - 1.6, 0.8, 0.8,
                 'id="extendf:' .. f.id .. '" onClick="ui_click" image="f_' .. (ICONS[f.id] and f.id or "default")
                 .. '" colors="' .. (extendF == f.id and COL_ICON or COL_DIM) .. '"')
         end
+        local by = y0 + EXT_D - 2.45
+        row(ax + 0.25 + 1.7, by, 3.4, ROW_H, "extendapply", COL_ALL, "Apply script")
+        row(ax + 0.25 + 3.4 + 0.2 + 1.7, by, 3.4, ROW_H, "extendremove", COL_ROW, "Remove all scripts")
     end
 
     return '<Defaults><Text color="' .. COL_TEXT .. '" fontSize="24"/><Button textColor="' .. COL_TEXT .. '" fontSize="24"/></Defaults>'
@@ -1228,8 +1232,8 @@ function ACTIONS.extend()
     extendOn = not extendOn
     if extendOn and not extendF then extendF = sel.f or (index and index.factions[1].id) end
     saveState()
-    setStatus(extendOn and "Drop any model into the Extend UI area to give it the TC model script. "
-        .. "Pick the faction for its activation icon there." or "Extend UI area hidden.")
+    setStatus(extendOn and "Put your models into the Extend UI area, pick a faction there, then press "
+        .. "Apply script (or Remove all scripts)." or "Extend UI area hidden.")
 end
 
 function ACTIONS.extendf(fid)
@@ -1265,9 +1269,14 @@ function ui_click(player, value, id)
 end
 
 
--- Global event: a model dropped into the Extend UI area gets the model script with the picked
--- faction (models that already run it only change faction). The script is installed like the
--- spawner's own self-update: state first, then the script, then reload.
+-- ============ EXTEND UI AREA ============
+-- Two buttons act on every figure lying in the area (nothing happens on drop):
+--   Apply script:  remove all scripts, then give each the TC model script with the picked faction
+--   Remove scripts: remove all scripts
+-- Each model is respawned from its own data with every script and UI stripped, the model, its
+-- attached parts and its states alike (setLuaScript would only replace the top object's
+-- script; source mods often script attached parts too). So a model that already ran the model
+-- script starts fresh (new id; destroying the old one releases its dice).
 local function inExtendArea(pos)
     local l, s = self.positionToLocal(pos), self.getScale()
     local x, y = -l.x * s.x, -l.z * s.z   -- the console's coordinates (see toWorld)
@@ -1275,26 +1284,68 @@ local function inExtendArea(pos)
     return x >= ax and x <= ax + EXT_W and y >= top + EXT_GAP and y <= top + EXT_GAP + EXT_D
 end
 
-function onObjectDrop(player_color, obj)
-    if not extendOn or obj == nil or obj == self or not FIGURES[obj.name] then return end
-    if not inExtendArea(obj.getPosition()) then return end
-    local fe = factionById[extendF]
-    local fname = fe and fe.name or "no faction"
-    if obj.hasTag(MODEL_TAG) then
-        obj.call("setFaction", {f = extendF})
-        setStatus(obj.getName() .. " now shows the " .. fname .. " activation icon.")
-        return
+local function figuresInArea()
+    local out = {}
+    for _, o in ipairs(getAllObjects()) do
+        if o ~= self and FIGURES[o.name] and inExtendArea(o.getPosition()) then out[#out + 1] = o end
     end
-    if not modelScript then
+    return out
+end
+
+local SCRIPT_TAGS = {[MODEL_TAG] = true, TCUIOperative = true}   -- added by the model script
+
+local function stripScripts(d)
+    d.LuaScript, d.LuaScriptState, d.XmlUI = "", "", ""
+    if type(d.Tags) == "table" then
+        local tags = {}
+        for _, t in ipairs(d.Tags) do
+            if not SCRIPT_TAGS[t] then tags[#tags + 1] = t end
+        end
+        d.Tags = tags
+    end
+    for _, c in ipairs(d.ChildObjects or {}) do stripScripts(c) end
+    for _, st in pairs(d.States or {}) do stripScripts(st) end
+end
+
+-- withScript: give the model script (faction extendF) after stripping.
+local function rescript(withScript)
+    if not notBusy() then return end
+    if withScript and not modelScript then
         setStatus("The model script isn't loaded (no connection?). Try Settings > Reload catalog.")
         return
     end
-    obj.UI.setXml("")
-    obj.script_state = JSON.encode({f = extendF, taken = true})
-    obj.setLuaScript(modelScript)
-    obj.reload()   -- replaces the object; obj isn't used afterwards
-    setStatus("Gave the TC model script to a model (" .. fname .. " activation icon).")
+    local figures = figuresInArea()
+    if #figures == 0 then
+        setStatus("No models in the Extend UI area. Put them in, then press the button again.")
+        return
+    end
+    local fe = factionById[extendF]
+    busy = true
+    for _, obj in ipairs(figures) do
+        queue[#queue + 1] = function()
+            if obj == nil then return end   -- deleted meanwhile
+            local d = obj.getData()
+            stripScripts(d)
+            if withScript then
+                d.LuaScript = modelScript
+                d.LuaScriptState = JSON.encode({f = extendF, taken = true})
+            end
+            local pos, rot = obj.getPosition(), obj.getRotation()
+            obj.destruct()
+            spawnObjectData({data = d, position = pos, rotation = rot})
+        end
+    end
+    flushQueue(function()
+        busy = false
+        setStatus(withScript
+            and ("Removed all scripts from " .. #figures .. " model(s) and gave them the TC model script ("
+                .. (fe and fe.name or "no faction") .. " activation icon).")
+            or ("Removed all scripts from " .. #figures .. " model(s)."))
+    end)
 end
+
+function ACTIONS.extendapply() rescript(true) end
+function ACTIONS.extendremove() rescript(false) end
 
 -- ============ WARBAND IMPORT CALLBACKS (XML) ============
 -- Unpacks a code from the converter page ("TCM1" + JSON, see docs/index.html) into the shape

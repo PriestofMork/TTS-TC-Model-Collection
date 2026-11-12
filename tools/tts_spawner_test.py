@@ -213,20 +213,40 @@ for _, o in ipairs(getAllObjects()) do
     if o.hasTag('TCM_Model') and string.find(o.memo or '', '|warband/', 1, true) then src = o break end
 end
 local d = src.getData()
-d.LuaScript, d.LuaScriptState, d.XmlUI, d.Memo, d.Tags, d.Nickname = '', '', '', '', {{'TCM_Test'}}, 'Extend test'
+-- A stand-in for a source mod's model: its own script on the model and on an attached part.
+d.LuaScript, d.LuaScriptState, d.XmlUI, d.Memo, d.Tags, d.Nickname = 'SOURCE_MARKER = 1', '', '', '', {{'TCM_Test'}}, 'Extend test'
+if d.ChildObjects and d.ChildObjects[1] then d.ChildObjects[1].LuaScript = 'SOURCE_MARKER = 2' end
 local hub = getObjectFromGUID('{hub}')
 local s = hub.getScale()
 local w = hub.positionToWorld(Vector(-12 / s.x, 0, -6 / s.z))
 return spawnObjectData({{data = d, position = {{w.x, w.y + 1, w.z}}}}).getGUID()""")
     t.lua("ui_click(nil, nil, 'extend') ui_click(nil, nil, 'extendf:trench-pilgrims') return 0", guid=hub)
     time.sleep(2)
-    t.lua(f"onObjectDrop('White', getObjectFromGUID('{copy}')) return 0", guid=hub)
+
+    def extend_state():
+        return t.lua("""for _, o in ipairs(getAllObjects()) do
+    if o.getName() == 'Extend test' then
+        local d, st = o.getData(), o.getTable('state')
+        local child = ''
+        for _, c in ipairs(d.ChildObjects or {}) do child = child .. (c.LuaScript or '') end
+        return {model = o.hasTag('TCM_Model'), f = st and st.f, source = string.find(d.LuaScript or '', 'SOURCE_MARKER', 1, true) ~= nil,
+                child = child, script = #(d.LuaScript or '')}
+    end
+end return {}""") or {}
+
+    t.lua(f"if onObjectDrop then onObjectDrop('White', getObjectFromGUID('{copy}')) end return 0", guid=hub)
+    time.sleep(2)
+    t.check("extend: dropping alone changes nothing", extend_state().get("source") is True, extend_state())
+    t.lua("ui_click(nil, nil, 'extendapply') return 0", guid=hub)
+    ext = wait_for(lambda: (lambda s: s if s.get("model") else None)(extend_state()), timeout=15) or extend_state()
+    t.check("extend: Apply script replaces all scripts with the model script (picked faction)",
+            ext.get("model") and ext.get("f") == "trench-pilgrims" and not ext.get("source") and ext.get("child") == "", ext)
+    t.lua("ui_click(nil, nil, 'extendremove') return 0", guid=hub)
     time.sleep(3)
-    ext = t.lua("""for _, o in ipairs(getAllObjects()) do
-    if o.getName() == 'Extend test' then local st = o.getTable('state') return {model = o.hasTag('TCM_Model'), f = st and st.f} end
-end return {}""")
-    t.check("extend: dropped model gets the script with the picked faction",
-            ext.get("model") and ext.get("f") == "trench-pilgrims", ext)
+    ext = extend_state()
+    t.check("extend: Remove all scripts leaves a plain model", ext.get("script") == 0 and not ext.get("model"), ext)
+    t.lua("ui_click(nil, nil, 'extendapply') return 0", guid=hub)   # Clear all below checks it stays
+    time.sleep(3)
 
     # --- Clear all ----------------------------------------------------------------------------
     if may_clear:
