@@ -275,8 +275,12 @@ local bag = spawnObjectData({{data = {{Name = 'Bag', Nickname = 'Virus test bag'
 return bag.getGUID()""")
     time.sleep(2)
     # Wait.frames: the cleanup takes seconds on a big table, longer than the bridge waits for a reply.
-    t.lua("ui_click(nil, nil, 'settings') Wait.frames(function() ui_click(nil, nil, 'virus') end, 1) return 0", guid=hub)
-    wait_for(lambda: "Removed the virus" in status() or "No virus" in status(), timeout=60)
+    t.lua("ui_click(nil, nil, 'settings') ui_click(nil, nil, 'viruscheck') return 0", guid=hub)
+    found = wait_for(lambda: "Pseudovirus found" in status() and status(), timeout=20) or status()
+    t.check("virus: Check counts the block and the bag", "2 script(s)" not in found and "1 script(s)" in found
+            and "inside 1 bag" in found, found[:160])
+    t.lua("Wait.frames(function() ui_click(nil, nil, 'virus') end, 1) return 0", guid=hub)
+    wait_for(lambda: "Removed the pseudovirus" in status() or "No pseudovirus" in status(), timeout=60)
     time.sleep(1)
     v = t.lua("""local r = {}
 for _, o in ipairs(getAllObjects()) do

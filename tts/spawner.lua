@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 18
+local SPAWNER_VERSION = 19
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -390,7 +390,9 @@ local function buildXml()
             y = y - ROW_H - 0.06
             row(cx, y - ROW_H / 2, LIST_W, ROW_H, "reload", COL_ROW, "Reload catalog")
             y = y - ROW_H - 0.06
-            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "virus", COL_ROW, "Remove virus")
+            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "viruscheck", COL_ROW, "Check for pseudovirus")
+            y = y - ROW_H - 0.06
+            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "virus", COL_ROW, "Remove pseudovirus")
         elseif not fe then
             text(cx, y - 0.4, LIST_W, 0.8, "Pick a faction on the left.", 'fontSize="26" alignment="UpperLeft"')
         else
@@ -1258,8 +1260,10 @@ function ACTIONS.scripts()
         or "New models spawn without scripts.")
 end
 
--- ============ REMOVE VIRUS ============
--- A self-spreading script circulates in TTS mods ("Spawning object"): it appends itself to every
+-- ============ CHECK / REMOVE PSEUDOVIRUS ============
+-- The same code, standalone for any object, is tts/pseudovirus_cleaner.lua (keep both in step).
+-- A self-spreading script circulates in TTS mods ("Spawning object", players call it the
+-- pseudovirus): it appends itself to every
 -- object's script after a load and to everything spawned later, and downloads more code from a
 -- web address. It was on all 302 objects of a game in Nov 2026 (its copy on the dice made them
 -- drop on number keys). Its block runs from VIRUS_START to VIRUS_END, after 400 spaces of
@@ -1314,6 +1318,32 @@ local function cleanNested(d)
     return found
 end
 
+-- How many scripts carry it: the Global script and objects' own, and objects hiding copies
+-- inside (contents, attached parts, states). Changes nothing.
+local function countVirus()
+    local own, inside = 0, 0
+    if withoutVirus(Global.getLuaScript()) then own = own + 1 end
+    for _, o in ipairs(getObjects()) do
+        if withoutVirus(o.getLuaScript()) then own = own + 1 end
+        -- getData returns a copy: cleanNested only looks.
+        if (o.getQuantity() > 0 or #(o.getAttachments() or {}) > 0) and cleanNested(o.getData()) then
+            inside = inside + 1
+        end
+    end
+    return own, inside
+end
+
+function ACTIONS.viruscheck()
+    if not notBusy() then return end
+    local own, inside = countVirus()
+    if own + inside == 0 then
+        setStatus("No pseudovirus in this game.")
+    else
+        setStatus("Pseudovirus found: " .. own .. " script(s)" .. (inside > 0 and (", and inside "
+            .. inside .. " bag(s) or model(s)") or "") .. ". Press Remove pseudovirus to remove it.")
+    end
+end
+
 function ACTIONS.virus()
     if not notBusy() then return end
     local cleaned = 0
@@ -1365,8 +1395,8 @@ function ACTIONS.virus()
                 end
             end
             busy = false
-            setStatus(cleaned == 0 and "No virus found in this game."
-                or ("Removed the virus from " .. cleaned .. " script(s). Save the game now and load it again: "
+            setStatus(cleaned == 0 and "No pseudovirus in this game."
+                or ("Removed the pseudovirus from " .. cleaned .. " script(s). Save the game now and load it again: "
                     .. "the copies already running stay active until then."))
         end, 2)
     end)
