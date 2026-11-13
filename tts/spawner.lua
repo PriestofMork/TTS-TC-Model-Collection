@@ -11,7 +11,7 @@
 -- is a random id saved in this object's state, so it survives GUID changes (TTS reassigns
 -- GUIDs on collision, e.g. when a save with another spawner is loaded).
 
-local SPAWNER_VERSION = 17
+local SPAWNER_VERSION = 18
 
 -- ===================== CONFIG =====================
 local RAW_BASE  = "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/"
@@ -389,6 +389,8 @@ local function buildXml()
             row(cx, y - ROW_H / 2, LIST_W, ROW_H, "scripts", COL_ROW, scriptsOn and "Model scripts: on" or "Model scripts: off")
             y = y - ROW_H - 0.06
             row(cx, y - ROW_H / 2, LIST_W, ROW_H, "reload", COL_ROW, "Reload catalog")
+            y = y - ROW_H - 0.06
+            row(cx, y - ROW_H / 2, LIST_W, ROW_H, "virus", COL_ROW, "Remove virus")
         elseif not fe then
             text(cx, y - 0.4, LIST_W, 0.8, "Pick a faction on the left.", 'fontSize="26" alignment="UpperLeft"')
         else
@@ -1254,6 +1256,120 @@ function ACTIONS.scripts()
     saveState()
     setStatus(scriptsOn and "New models get the model script (activation, dice, range rings)."
         or "New models spawn without scripts.")
+end
+
+-- ============ REMOVE VIRUS ============
+-- A self-spreading script circulates in TTS mods ("Spawning object"): it appends itself to every
+-- object's script after a load and to everything spawned later, and downloads more code from a
+-- web address. It was on all 302 objects of a game in Nov 2026 (its copy on the dice made them
+-- drop on number keys). Its block runs from VIRUS_START to VIRUS_END, after 400 spaces of
+-- padding. Remove virus cuts every copy out of the Global script and every object's script,
+-- also from objects inside containers and attached parts (those are rebuilt from their data,
+-- as setLuaScript only reaches the top object). The copies already running stay active until
+-- the game is loaded again, so players save and reload right after.
+-- The markers are built from pieces so this script never contains them whole (cleaning the
+-- spawner itself would otherwise cut its own code).
+local VIRUS_START = "--[[Object base" .. " code]]"
+local VIRUS_END   = "--[[Spawning" .. " object]]"
+
+-- Trailing whitespace off, by hand: Lua patterns on big scripts can fail in MoonSharp.
+local function rtrim(s)
+    local n = #s
+    while n > 0 do
+        local c = string.byte(s, n)
+        if c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then break end
+        n = n - 1
+    end
+    return string.sub(s, 1, n)
+end
+
+-- The script without the virus, or nil if it had none.
+local function withoutVirus(script)
+    if type(script) ~= "string" or not string.find(script, VIRUS_START, 1, true) then return nil end
+    local s = script
+    while true do
+        local a = string.find(s, VIRUS_START, 1, true)
+        if not a then break end
+        local b = string.find(s, VIRUS_END, a, true)
+        local rest = b and string.sub(s, b + #VIRUS_END) or ""
+        s = rtrim(string.sub(s, 1, a - 1)) .. rest
+    end
+    return rtrim(s)
+end
+
+-- Cleans the scripts inside object data (contents, attached parts, states; not the object's
+-- own) in place; true if anything was cut.
+local function cleanNested(d)
+    local found = false
+    local function each(list)
+        for _, c in pairs(list or {}) do
+            local clean = withoutVirus(c.LuaScript)
+            if clean then c.LuaScript, found = clean, true end
+            if cleanNested(c) then found = true end
+        end
+    end
+    each(d.ContainedObjects)
+    each(d.ChildObjects)
+    each(d.States)
+    return found
+end
+
+function ACTIONS.virus()
+    if not notBusy() then return end
+    local cleaned = 0
+    local g = withoutVirus(Global.getLuaScript())
+    if g then Global.setLuaScript(g) cleaned = cleaned + 1 end
+    busy = true
+    -- getObjects, not getAllObjects: only it includes hand zones, and the virus infects those
+    -- too (an infected game had all 15; their running copies re-infected everything spawned).
+    -- First every object's own script, in one go: the copies already running infect whatever
+    -- spawns, but they copy themselves from their own object's script text, so once all texts
+    -- are clean, the rebuilt objects below can't catch it again.
+    local objects = getObjects()
+    for _, o in ipairs(objects) do
+        local own = withoutVirus(o.getLuaScript())
+        if own then
+            o.setLuaScript(own)
+            cleaned = cleaned + 1
+        end
+    end
+    -- Then containers and objects with attached parts, which can hide copies inside. They are
+    -- rebuilt from their cleaned data, but only when something inside is infected: rebuilding
+    -- a model destroys it, which unlinks its dice.
+    for _, o in ipairs(objects) do
+        if o.getQuantity() > 0 or #(o.getAttachments() or {}) > 0 then
+            queue[#queue + 1] = function()
+                if o == nil then return end
+                local d = o.getData()
+                if not cleanNested(d) then return end
+                cleaned = cleaned + 1
+                local pos, rot = o.getPosition(), o.getRotation()
+                o.destruct()
+                -- Spawned a frame later, so its GUID (kept in d) is free again and it gets it
+                -- back: other table scripts may look the bag up by GUID.
+                Wait.frames(function()
+                    spawnObjectData({data = d, position = pos, rotation = rot})
+                end, 1)
+            end
+        end
+    end
+    flushQueue(function()
+        -- A second sweep: an object that loaded just before the click runs the virus's
+        -- "infect everything one second after loading" step afterwards (seen in testing).
+        Wait.time(function()
+            for _, o in ipairs(getObjects()) do
+                local own = withoutVirus(o.getLuaScript())
+                if own then
+                    o.setLuaScript(own)
+                    cleaned = cleaned + 1
+                end
+            end
+            busy = false
+            setStatus(cleaned == 0 and "No virus found in this game."
+                or ("Removed the virus from " .. cleaned .. " script(s). Save the game now and load it again: "
+                    .. "the copies already running stay active until then."))
+        end, 2)
+    end)
 end
 
 -- XML clicks: the element's id is "<action>" or "<action>:<arg>".

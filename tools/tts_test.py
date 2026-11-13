@@ -159,14 +159,19 @@ o.setPositionSmooth({{p.x, p.y + 3, p.z}}) o.setRotation({{35, 0, 25}}) o.call('
 
     # --- dice -------------------------------------------------------------------------
     die = lua(f"""local p = getObjectFromGUID('{a}').getPosition()
-return spawnObject({{type = 'Die_6', position = {{p.x, p.y + 1, p.z}}}}).getGUID()""")
+-- Another script already on the die (Nov 2026: a game infected with the self-spreading
+-- "Spawning object" script had it on every die): linking must still give it ours.
+local d = spawnObject({{type = 'Die_6', position = {{p.x, p.y + 1, p.z}}}})
+d.setLuaScript('FOREIGN_SCRIPT = 1')
+return d.getGUID()""")
     time.sleep(1.5)
     lua(f"onObjectDrop('White', getObjectFromGUID('{die}')) return 0", guid=a)
     time.sleep(3)   # the die gets its script (reload) and is placed
     sa = model_state(a)
     d = lua(f"""local d = getObjectFromGUID('{die}')
 return {{memo = d.memo, tag = d.hasTag('TCM_Die'), locked = d.getLock(),
-        script = string.find(d.getLuaScript(), 'TC Miniatures die marker v2', 1, true) ~= nil}}""")
+        script = string.find(d.getLuaScript(), 'TC Miniatures die marker v2', 1, true) ~= nil
+           and not string.find(d.getLuaScript(), 'FOREIGN_SCRIPT', 1, true)}}""")
     check("dice: linked", die in sa.get("dice", []), sa.get("dice"))
     check("dice: memo is the model's id (not its GUID)", d["memo"] == sa["id"], d["memo"])
     check("dice: tagged, locked, script v2", d["tag"] and d["locked"] and d["script"], d)

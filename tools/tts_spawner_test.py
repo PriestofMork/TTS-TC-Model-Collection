@@ -97,6 +97,15 @@ def main():
     server = serve()
     script = (ROOT / "tts" / "spawner.lua").read_text(encoding="utf-8").replace(
         "https://raw.githubusercontent.com/PriestofMork/TTS-TC-Model-Collection/main/", f"http://127.0.0.1:{PORT}/")
+    # In a game infected with the self-spreading "Spawning object" script everything spawned
+    # catches it (and its hooks slow every spawn down), so the Extend checks can't pass there.
+    infected = t.lua("""local n = 0 for _, o in ipairs(getObjects()) do
+    if string.find(o.getLuaScript() or '', '--[[Object base' .. ' code]]', 1, true) then n = n + 1 end
+end return n""")
+    if infected:
+        print(f"STOP: {infected} object(s) carry the 'Spawning object' virus. Remove it (spawner Settings > "
+              "Remove virus), save and load the game again, then rerun this test.")
+        sys.exit(1)
     others = t.lua("local n = 0 for _, o in ipairs(getAllObjects()) do if o.hasTag('TCM_Spawned') then n = n + 1 end end return n")
     hub = None
     try:
@@ -247,6 +256,49 @@ end return {}""") or {}
     t.check("extend: Remove all scripts leaves a plain model", ext.get("script") == 0 and not ext.get("model"), ext)
     t.lua("ui_click(nil, nil, 'extendapply') return 0", guid=hub)   # Clear all below checks it stays
     time.sleep(3)
+
+    # --- Remove virus --------------------------------------------------------------------------
+    # Stand-ins with a fake copy of the self-spreading "Spawning object" script (only its start
+    # and end markers matter): a block whose own code must stay, and a bag holding an infected
+    # object. Remove virus cleans every object in the game, so this also cleans a real infection.
+    fake = ("string.rep(' ', 400) .. '--[[Object base' .. ' code]] FAKE_VIRUS = 1 --[[Spawning' .. ' object]]' "
+            ".. string.char(10, 10)")
+    bag_guid = t.lua(f"""local p = getObjectFromGUID('{hub}').getPosition()
+spawnObjectData({{data = {{Name = 'BlockSquare', Nickname = 'Virus test block', Tags = {{'TCM_Test'}},
+    Transform = {{posX = p.x - 4, posY = p.y + 1, posZ = p.z - 8, rotX = 0, rotY = 0, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1}},
+    LuaScript = 'KEEP_ME = 1' .. {fake}}}}})
+local bag = spawnObjectData({{data = {{Name = 'Bag', Nickname = 'Virus test bag', Tags = {{'TCM_Test'}},
+    Transform = {{posX = p.x - 7, posY = p.y + 1, posZ = p.z - 8, rotX = 0, rotY = 0, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1}},
+    ContainedObjects = {{{{Name = 'BlockSquare', Nickname = 'Virus test inside',
+        Transform = {{posX = 0, posY = 0, posZ = 0, rotX = 0, rotY = 0, rotZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1}},
+        LuaScript = 'INSIDE = 1' .. {fake}}}}}}}}})
+return bag.getGUID()""")
+    time.sleep(2)
+    # Wait.frames: the cleanup takes seconds on a big table, longer than the bridge waits for a reply.
+    t.lua("ui_click(nil, nil, 'settings') Wait.frames(function() ui_click(nil, nil, 'virus') end, 1) return 0", guid=hub)
+    wait_for(lambda: "Removed the virus" in status() or "No virus" in status(), timeout=60)
+    time.sleep(1)
+    v = t.lua("""local r = {}
+for _, o in ipairs(getAllObjects()) do
+    if o.getName() == 'Virus test block' then r.block = o.getLuaScript() end
+    if o.getName() == 'Virus test bag' then
+        local d = o.getData()
+        r.inside = d.ContainedObjects and d.ContainedObjects[1] and d.ContainedObjects[1].LuaScript
+        r.bagGuid = o.getGUID()
+    end
+end
+local n = 0
+for _, o in ipairs(getAllObjects()) do
+    if string.find(o.getLuaScript() or '', '--[[Object base' .. ' code]]', 1, true) then n = n + 1 end
+end
+r.left = n
+return r""")
+    t.check("virus: removed, the object's own code kept", v.get("block") == "KEEP_ME = 1", v.get("block"))
+    t.check("virus: removed from an object inside a bag", v.get("inside") == "INSIDE = 1", v.get("inside"))
+    t.check("virus: the rebuilt bag keeps its GUID", v.get("bagGuid") == bag_guid, (bag_guid, v.get("bagGuid")))
+    t.check("virus: no copy left on the table", v.get("left") == 0, v.get("left"))
+    print("     (" + status()[:160].replace("\n", " ") + ")")
+    t.lua("ui_click(nil, nil, 'settings') return 0", guid=hub)
 
     # --- Clear all ----------------------------------------------------------------------------
     if may_clear:

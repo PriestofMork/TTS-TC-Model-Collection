@@ -407,7 +407,7 @@ end
 local DIE_SCRIPT = [[
 -- 1-6 turn this die to that face, 0 hands it back to its model. memo = the id of the model it
 -- belongs to (kept in the model's state; GUIDs can change). The marker below is code, not a
--- comment, so it survives the spawner stripping comments; linkDie looks for it.
+-- comment, so it survives the spawner stripping comments (tests and finding old dice use it).
 TCM_DIE = "TC Miniatures die marker v2"
 local model = nil
 local function findModel()
@@ -448,19 +448,14 @@ local function addDie(die)
     changed()
 end
 
--- A die gets this model's id in its memo and the die tag. Dice without a script, or with an
--- older version of ours, also get DIE_SCRIPT; a new script only runs after a reload (the GUID
--- stays). Dice with someone else's script are linked without it (number keys then behave
--- like TTS's default).
+-- A die gets this model's id in its memo, the die tag and DIE_SCRIPT, which replaces whatever
+-- script it had (a new script only runs after a reload; the GUID stays). Always, no checks:
+-- without ours, TTS's default number handling drops the die on 1-6. (Nov 2026: a game
+-- infected with the self-spreading "Spawning object" script had it on every die, and dice
+-- linked without ours fell down on every key.) Runs once per link (a drop), not on load.
 local function linkDie(die)
     die.memo = state.id
     if not die.hasTag(DIE_TAG) then die.addTag(DIE_TAG) end
-    local script = die.getLuaScript()
-    local ours = string.find(script, "TC Miniatures die marker", 1, true) ~= nil
-    if script == DIE_SCRIPT or (script ~= "" and not ours) then
-        addDie(die)
-        return
-    end
     die.setLuaScript(DIE_SCRIPT)
     local fresh = die.reload()
     Wait.condition(function()
