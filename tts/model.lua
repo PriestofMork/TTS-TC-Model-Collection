@@ -98,6 +98,8 @@ local PLAYER_COLORS = {
 --   geo      measured once at rest: {bottom = base bottom below the pivot, h = collider
 --            height, w = footprint width (x), d = footprint depth (z)}, world inches
 --   taken    has left the spawner's platform (shows the activation token)
+--   hideAct  the player switched the activation token off (right-click menu); activation
+--            itself still works (Ready all, scoreboards), it just isn't drawn
 --   dice     GUIDs of the linked dice in arc order (rebuilt from their tags on every load)
 state = {v = STATE_VERSION, id = nil, idGuid = nil, f = nil, u = nil, member = false, base = nil,
          geo = nil, savePos = nil, tokens = {}, dice = {}, activated = false, taken = false}
@@ -302,7 +304,7 @@ local function renderPanel()
     local icon = ICONS[state.f] or ICONS.default
     if picking then
         parts[#parts + 1] = pickerXml()
-    elseif state.taken and icon then   -- setCustomAssets fails on a nil URL
+    elseif state.taken and icon and not state.hideAct then   -- setCustomAssets fails on a nil URL
         assets[#assets + 1] = {name = actAsset(), url = icon}
         parts[#parts + 1] = tokenXml()
     end
@@ -643,6 +645,13 @@ function setFaction(params)
     changed()
 end
 
+-- Right-click "Activation token on/off": shows or hides the token. Only the drawing:
+-- activation itself keeps working (Ready all, scoreboards).
+function toggleTokenShown()
+    state.hideAct = not state.hideAct or nil   -- nil = shown (older saves have no flag)
+    changed()
+end
+
 -- Swap: this model replaces a warband member. It takes over the member's name, rules,
 -- activation, tokens and dice, and its place on the table.
 function adoptMember(params)
@@ -652,6 +661,7 @@ function adoptMember(params)
         -- Swaps happen on the import platform, so the activation token shows once the model
         -- is taken off (see the drop handler).
         state.activated, state.taken, state.tokens = p.activated, false, p.tokens or {}
+        state.hideAct = p.hideAct
         state.dice = p.dice or {}
         self.setName(params.name)
         self.setDescription(params.desc)
@@ -679,7 +689,8 @@ local function trySwap(obj)
     obj.call("adoptMember", {
         name = self.getName(), desc = self.getDescription(),
         pos = self.getPosition(), rot = self.getRotation(),
-        state = {f = state.f, u = state.u, activated = state.activated, tokens = state.tokens, dice = state.dice},
+        state = {f = state.f, u = state.u, activated = state.activated, tokens = state.tokens, dice = state.dice,
+                 hideAct = state.hideAct},
     })
     state.dice = {}   -- handed over: onDestroy must not unlock them
     saveState()
@@ -839,6 +850,7 @@ function onLoad(saved_data)
     self.addContextMenuItem("Save position", function() safe("save position", savePosition) end)
     self.addContextMenuItem("Load position", function() safe("load position", loadPosition) end)
     self.addContextMenuItem("Set base size", function(player_color) safe("base size", openPicker, player_color) end)
+    self.addContextMenuItem("Activation token on/off", function() safe("token on/off", toggleTokenShown) end)
     self.addContextMenuItem("Clear tokens", function()
         state.tokens = {}
         changed()

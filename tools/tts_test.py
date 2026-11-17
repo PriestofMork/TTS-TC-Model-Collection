@@ -203,6 +203,21 @@ for _, g in ipairs({{'{a}', '{b}'}}) do r[#r + 1] = string.match(getObjectFromGU
 return r""")
     check("ready all: icons stay per faction", icons == ["act_new-antioch", "act_trench-pilgrims"], icons)
 
+    # --- activation token on/off (right-click menu) -----------------------------------------
+    def shows_token():
+        return lua(f"return string.find(getObjectFromGUID('{a}').UI.getXml(), 'act_', 1, true) ~= nil")
+    lua("toggleTokenShown() return 0", guid=a)
+    time.sleep(0.5)
+    hidden = not shows_token()
+    lua(f"getObjectFromGUID('{a}').call('toggleState') return 0")   # activation still works while hidden
+    time.sleep(0.5)
+    still = model_state(a).get("activated") is True and not shows_token()
+    lua(f"getObjectFromGUID('{a}').call('toggleState') return 0")
+    lua("toggleTokenShown() return 0", guid=a)
+    time.sleep(0.5)
+    check("token on/off: hidden, activation still toggles, shown again",
+          hidden and still and shows_token(), (hidden, still))
+
     # --- copies get their own id --------------------------------------------------------
     copy = lua(f"""local o = getObjectFromGUID('{a}') local p = o.getPosition()
 return o.clone({{position = {{p.x, p.y + 2, p.z - 3}}}}).getGUID()""")
